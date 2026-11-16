@@ -164,9 +164,39 @@ export function zahl(text) {
   return r3(Number(m[1]) / ({ mm: 1000, cm: 100 }[(m[2] || '').toLowerCase()] || 1));
 }
 
-/** Datei nach Abschnitt 3 (Version 1), Maße in m auf mm gerundet. Zusatzfelder für den Abgleich PC ↔ Handy
- *  (dürfen fehlen, ältere Leser übergehen sie): id = dieselbe Baustelle auf beiden Geräten,
- *  skizze = ungefähre Wandlänge aus Zeichnung/Plan, solange laenge noch nicht gemessen ist (null). */
+// Felder, die die App selbst kennt; alles andere aus einer PC-Datei wird unverändert durchgereicht, damit beim Hin
+// und Her nichts verloren geht (z. B. Türanschlag, Fensterbrett, Leitungen).
+const BEKANNT = {
+  baustelle: ['id', 'baustelle', 'etagen', 'geaendert', 'format', 'version', 'erstellt'],
+  etage: ['name', 'raeume'],
+  raum: ['name', 'hoehe', 'waende', 'notiz', 'koerper', 'drehung'],
+  wand: ['laenge', 'winkel', 'mitrechnen', 'oeffnungen', 'anschluesse', 'skizze', 'skizzeWinkel'],
+  oeffnung: ['art', 'abstand', 'breite', 'hoehe', 'bruestung'],
+  anschluss: ['art', 'abstand', 'hoehe'],
+  koerper: ['form', 'x', 'y', 's', 'a', 'b', 't', 'd', 'h'],
+};
+const rest = (o, art) => Object.fromEntries(Object.entries(o || {}).filter(([k]) => !BEKANNT[art].includes(k)).map(([k, v]) => [k, structuredClone(v)]));
+
+// Säulen/Körper (Form wie geometrie.py am PC): In der Datei Mitte x, y ab linker unterer Ecke des Umrisses.
+// In der App gemessen wie auf der Baustelle: s = Abstand vom Anfang von Wand A (entlang A), a = Abstand von Wand A.
+const halb = k => k.form === 'kreis' ? [k.d / 2, k.d / 2] : [k.b / 2, k.t / 2];
+const ecke = waende => { const p = punkte(waende); return [Math.min(...p.map(q => q[0])), Math.min(...p.map(q => q[1]))]; };
+/** Mitte des Körpers in Koordinaten von punkte() (Wand A nach rechts, Raum darunter). */
+export function koerperMitte(k) { const [hx, hy] = halb(k); return [k.s + hx, -(k.a + hy)]; }
+function koerperExport(k, waende) {
+  const [ux, uy] = ecke(waende), [cx, cy] = koerperMitte(k);
+  const masse = k.form === 'kreis' ? { d: r3(k.d) } : { b: r3(k.b), t: r3(k.t) };
+  return { form: k.form, x: r3(cx - ux), y: r3(cy - uy), ...masse, h: k.h == null ? null : r3(k.h), ...rest(k, 'koerper') };
+}
+function koerperImport(k, waende) {
+  const [ux, uy] = ecke(waende), [hx, hy] = halb(k);
+  return { ...rest(k, 'koerper'), form: k.form, ...(k.form === 'kreis' ? { d: k.d } : { b: k.b, t: k.t }),
+           s: r3(k.x + ux - hx), a: r3(-(k.y + uy) - hy), h: k.h ?? null };
+}
+
+/** Datei nach Abschnitt 3 (Version 1), Maße in m auf mm gerundet. Zusatzfelder (dürfen fehlen, ältere Leser übergehen
+ *  sie): id = dieselbe Baustelle auf beiden Geräten; skizze = ungefähre Wandlänge, solange laenge null ist;
+ *  anschluesse (Wand) und koerper (Raum) in der Form von geometrie.py; unbekannte Felder werden durchgereicht. */
 export function exportieren(b, jetzt = new Date()) {
   const z = n => String(n).padStart(2, '0');
   const erstellt = `${jetzt.getFullYear()}-${z(jetzt.getMonth() + 1)}-${z(jetzt.getDate())}T${z(jetzt.getHours())}:${z(jetzt.getMinutes())}`;
@@ -180,18 +210,23 @@ export function exportieren(b, jetzt = new Date()) {
         winkel: Math.round(w.winkel * 100) / 100,
         mitrechnen: w.mitrechnen !== false,
         oeffnungen: (w.oeffnungen || []).map(o => ({ art: o.art, abstand: r3(o.abstand), breite: r3(o.breite),
-                                                     hoehe: r3(o.hoehe), bruestung: r3(o.bruestung ?? 0) })),
+                                                     hoehe: r3(o.hoehe), bruestung: r3(o.bruestung ?? 0), ...rest(o, 'oeffnung') })),
+        ...(w.anschluesse?.length ? { anschluesse: w.anschluesse.map(a => ({ art: a.art, abstand: r3(a.abstand), hoehe: r3(a.hoehe), ...rest(a, 'anschluss') })) } : {}),
         ...(w.laenge == null && w.skizze != null ? { skizze: Math.round(w.skizze * 100) / 100 } : {}),
+        ...rest(w, 'wand'),
       }));
       raum.notiz = r.notiz || '';
-      return raum;
-    }) })),
+      if (r.koerper?.length) raum.koerper = r.koerper.map(k => koerperExport(k, r.waende));
+      return Object.assign(raum, rest(r, 'raum'));
+    }), ...rest(e, 'etage') })),
+    ...rest(b, 'baustelle'),
   };
 }
 
 /** Prüft eine Aufmaß-Datei (beim Einlesen fremder Dateien). null = in Ordnung, sonst Fehlertext. */
 export function pruefeDatei(d) {
   const zahlOk = v => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  const endlich = v => typeof v === 'number' && Number.isFinite(v);
   if (!d || d.format !== 'aufmass') return 'Keine Aufmaß-Datei.';
   if (d.version !== 1) return `Version ${d.version} wird nicht unterstützt.`;
   if (typeof d.baustelle !== 'string' || !Array.isArray(d.etagen)) return 'Baustelle oder Etagen fehlen.';
@@ -203,6 +238,11 @@ export function pruefeDatei(d) {
       if (typeof r.name !== 'string' || !Array.isArray(r.waende)) return `${wo}: Name oder Wände fehlen.`;
       if (r.hoehe != null && !zahlOk(r.hoehe)) return `${wo}: Höhe ungültig.`;
       if (r.notiz != null && typeof r.notiz !== 'string') return `${wo}: Notiz ungültig.`;
+      if (r.koerper != null && !Array.isArray(r.koerper)) return `${wo}: Säulen ungültig.`;
+      for (const k of r.koerper || []) {
+        const masse = k.form === 'kreis' ? zahlOk(k.d) && k.d > 0 : k.form === 'rechteck' && zahlOk(k.b) && zahlOk(k.t) && k.b > 0 && k.t > 0;
+        if (!masse || !endlich(k.x) || !endlich(k.y) || (k.h != null && !zahlOk(k.h))) return `${wo}: Säule/Körper ungültig.`;
+      }
       for (const [i, w] of r.waende.entries()) {
         if (w.laenge !== null && !zahlOk(w.laenge)) return `${wo}, Wand ${name(i)}: Länge ungültig.`;
         if (!(typeof w.winkel === 'number' && w.winkel >= 0 && w.winkel <= 360)) return `${wo}, Wand ${name(i)}: Winkel ungültig.`;
@@ -212,6 +252,9 @@ export function pruefeDatei(d) {
         for (const o of w.oeffnungen || [])
           if (!['tuer', 'fenster'].includes(o.art) || !['abstand', 'breite', 'hoehe', 'bruestung'].every(k => zahlOk(o[k])))
             return `${wo}, Wand ${name(i)}: Tür/Fenster ungültig.`;
+        if (w.anschluesse != null && !Array.isArray(w.anschluesse)) return `${wo}, Wand ${name(i)}: Anschlüsse ungültig.`;
+        for (const a of w.anschluesse || [])
+          if (typeof a.art !== 'string' || !zahlOk(a.abstand) || !zahlOk(a.hoehe)) return `${wo}, Wand ${name(i)}: Anschluss ungültig.`;
       }
     }
   }
@@ -221,12 +264,15 @@ export function pruefeDatei(d) {
 /** Geprüfte Datei -> Baustelle für die App. Hat die Datei eine id, behält die Baustelle sie (Abgleich). */
 export function einlesen(d, neueId) {
   return {
-    id: d.id || neueId, baustelle: d.baustelle,
-    etagen: d.etagen.map(e => ({ name: e.name, raeume: e.raeume.map(r => ({
-      name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0,
-      waende: r.waende.map(w => ({ laenge: w.laenge, winkel: w.winkel, mitrechnen: w.mitrechnen !== false,
-                                   oeffnungen: (w.oeffnungen || []).map(o => ({ ...o })),
-                                   skizze: w.skizze ?? w.laenge ?? 1 })),
-    })) })),
+    ...rest(d, 'baustelle'), id: d.id || neueId, baustelle: d.baustelle,
+    etagen: d.etagen.map(e => ({ ...rest(e, 'etage'), name: e.name, raeume: e.raeume.map(r => {
+      const waende = r.waende.map(w => ({
+        ...rest(w, 'wand'), laenge: w.laenge, winkel: w.winkel, mitrechnen: w.mitrechnen !== false,
+        oeffnungen: (w.oeffnungen || []).map(o => structuredClone(o)),
+        anschluesse: (w.anschluesse || []).map(a => structuredClone(a)),
+        skizze: w.skizze ?? w.laenge ?? 1 }));
+      const koerper = (r.koerper || []).map(k => koerperImport(k, waende));
+      return { ...rest(r, 'raum'), name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0, waende, koerper };
+    }) })),
   };
 }

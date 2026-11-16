@@ -188,3 +188,21 @@ test('Vorsprung und Nische einfügen', async () => {
     assert.deepEqual(p.fehlt, ['A', 'B', 'C', 'D', 'E']);
   }
 });
+
+test('PC-Plan hin und zurück: Säulen, Anschlüsse und unbekannte Felder bleiben erhalten', () => {
+  const vomPc = { format: 'aufmass', version: 1, erstellt: '2026-11-18T08:00', id: 'p1', baustelle: 'Plan', planer: 'PC',
+    etagen: [{ name: 'EG', dicke: 0.4, raeume: [{ name: 'Bad', hoehe: 2.5, raumart: 'bad', waende: [
+      { laenge: 4, winkel: 90, mitrechnen: true, dicke: 0.115, oeffnungen: [{ art: 'tuer', abstand: 0.3, breite: 0.885, hoehe: 2.01, bruestung: 0, anschlag: 'links', typ: 'einfach' }],
+        anschluesse: [{ art: 'steckdose', abstand: 1.2, hoehe: 0.3, leitung: 'oben' }, { art: 'kw', abstand: 2.5, hoehe: 0.55, leitung: '' }] },
+      { laenge: 3, winkel: 90, mitrechnen: true, oeffnungen: [] },
+      { laenge: 4, winkel: 90, mitrechnen: true, oeffnungen: [] },
+      { laenge: 3, winkel: 90, mitrechnen: true, oeffnungen: [] }],
+      notiz: '', koerper: [{ form: 'rechteck', x: 1.15, y: 2.35, b: 0.3, t: 0.3, h: null, umbauen: true, name: 'Schacht' },
+                            { form: 'kreis', x: 3, y: 1, d: 0.4, h: 2.2 }] }] }] };
+  assert.equal(pruefeDatei(vomPc), null);
+  const b = einlesen(vomPc, 'x');
+  const k = b.etagen[0].raeume[0].koerper[0];
+  nah(k.s, 1, 1e-9); nah(k.a, 0.5, 1e-9); // ab Anfang von Wand A 1,00 m, von Wand A 0,50 m
+  assert.deepEqual(exportieren(b, new Date(2026, 10, 18, 8, 0)), vomPc);
+  assert.match(pruefeDatei({ ...vomPc, etagen: [{ name: 'EG', raeume: [{ name: 'X', waende: [], koerper: [{ form: 'kreis', x: 1, y: 1 }] }] }] }), /Säule/);
+});

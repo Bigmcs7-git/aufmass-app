@@ -1,5 +1,5 @@
 // Offline-Betrieb: alle App-Dateien liegen im Gerät. Bei einer neuen Version STAND erhöhen.
-const STAND = 'aufmass-4';
+const STAND = 'aufmass-5';
 const DATEIEN = ['./', 'index.html', 'style.css', 'app.js', 'geo.js', 'laser.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => e.waitUntil(caches.open(STAND).then(c => c.addAll(DATEIEN)).then(() => self.skipWaiting())));

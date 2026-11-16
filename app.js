@@ -3,7 +3,7 @@ import * as G from './geo.js';
 import * as Laser from './laser.js';
 
 const $ = s => document.querySelector(s);
-const app = $('#app'), dlg = $('#wand');
+const app = $('#app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const de = (v, n = 2) => v.toFixed(n).replace('.', ',');
 const feldText = v => v == null ? '' : String(+v.toFixed(3)).replace('.', ',');
@@ -28,18 +28,19 @@ const entfernen = b => { alle = alle.filter(x => x !== b); return tx('readwrite'
 const ort = () => location.hash.slice(1).split('/').map(decodeURIComponent);
 const geh = (...teile) => { location.hash = teile.map(encodeURIComponent).join('/'); };
 function zeigen() {
-  const [art, id, e, r] = ort();
+  const [art, id, e, r, i, anteil] = ort();
   const b = alle.find(x => x.id === id);
-  dlg.open && dlg.close();
   zeichnen = null;
-  if (art === 'r' && b?.etagen[e]?.raeume[r]) raumSeite(b, +e, +r);
+  app.onchange = null;
+  if (art === 'w' && b?.etagen[e]?.raeume[r]?.waende[i]) wandSeite(b, +e, +r, +i, anteil == null ? null : +anteil);
+  else if (art === 'r' && b?.etagen[e]?.raeume[r]) raumSeite(b, +e, +r);
   else if (art === 'b' && b) baustelleSeite(b);
   else startSeite();
 }
 addEventListener('hashchange', () => { zeigen(); scrollTo(0, 0); });
 $('#zurueck').onclick = () => {
-  const [art, id] = ort();
-  art === 'r' ? geh('b', id) : geh('');
+  const [art, id, e, r] = ort();
+  art === 'w' ? geh('r', id, e, r) : art === 'r' ? geh('b', id) : geh('');
 };
 const kopf = (titel, zurueck = true) => { $('#titel').textContent = titel; $('#zurueck').style.visibility = zurueck ? '' : 'hidden'; };
 const frage = (text, vorgabe = '') => { const t = prompt(text, vorgabe); return t == null ? null : t.trim() || null; };
@@ -151,13 +152,15 @@ async function teilen(b) {
 }
 
 // ---------- Raum: Skizze und Maße ----------
+const kfeld = (ziel, v, label, platz = '') => `<label><small>${label}</small><input data-ziel="${ziel}" inputmode="decimal" enterkeyhint="next" value="${feldText(v)}" placeholder="${platz}"></label>`;
 let zeichnen = null; // {pkt: [[x, y] …] im Zeichenfeld (y nach unten), zug: Vorschaupunkt beim Ziehen}
 let letztesFeld = null;
 let aktiv = null; // {b, e, r, raum}
 
 function raumSeite(b, e, r) {
   const raum = b.etagen[e].raeume[r];
-  aktiv = { b, raum };
+  aktiv = { b, raum, e, r };
+  raum.koerper ??= [];
   kopf(`${b.etagen[e].name} · ${raum.name}`);
   if (!raum.waende.length) zeichnen = { pkt: [], zug: null };
   app.onclick = null;
@@ -173,11 +176,41 @@ function raumSeite(b, e, r) {
       <span>m</span>
       <input data-feld="w" data-i="${i}" inputmode="decimal" tabindex="-1" aria-label="Winkel Ecke nach ${G.name(i)}" value="${feldText(Math.round(w.winkel * 10) / 10)}">
       <span>°</span></div>`).join('')}</div>
-    ${raum.waende.length ? '<p class="hinweis">Feld antippen, messen, Enter: das nächste Feld ist dran. Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend); schräge Ecken rechnet die App aus, sobald alle Wände gemessen sind (grün). Buchstabe antippen für Türen, Fenster, Löschen.</p>' : ''}
+    ${raum.waende.length ? `<p class="hinweis">Feld antippen, messen, Enter: das nächste Feld ist dran. Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend); schräge Ecken rechnet die App aus, sobald alle Wände gemessen sind (grün). Buchstabe oder Wand in der Skizze antippen: Wandansicht mit Türen, Fenstern, Anschlüssen.</p>
+      <div class="reihe"><button class="haupt" id="r-waende">Wände der Reihe nach bemaßen</button></div>
+      <h3>Säulen und Körper</h3>
+      <p class="hinweis">Lage: „ab Ecke“ = entlang Wand A ab ihrem Anfang bis zur Säule, „von A“ = quer von Wand A bis zur Säule.</p>
+      ${raum.koerper.map((k, j) => `<div class="oe" id="k-${j}">
+        <select data-form="${j}"><option value="rechteck" ${k.form === 'rechteck' ? 'selected' : ''}>Säule eckig</option><option value="kreis" ${k.form === 'kreis' ? 'selected' : ''}>Säule rund</option></select>
+        <button class="klein weg" data-kweg="${j}" aria-label="löschen">✕</button>
+        ${kfeld(`${j}.s`, k.s, 'ab Ecke')}${kfeld(`${j}.a`, k.a, 'von A')}
+        ${k.form === 'kreis' ? kfeld(`${j}.d`, k.d, 'Ø') : kfeld(`${j}.b`, k.b, 'Breite') + kfeld(`${j}.t`, k.t, 'Tiefe')}
+        ${kfeld(`${j}.h`, k.h, 'Höhe', 'Decke')}</div>`).join('')}
+      <div class="reihe"><button id="r-saeule">+ Säule / Körper</button></div>` : ''}
     <label>Notiz<textarea id="notiz" rows="2">${esc(raum.notiz)}</textarea></label>`;
   $('#notiz').onchange = ev => { raum.notiz = ev.target.value; speichern(b); };
-  app.querySelectorAll('button[data-wand]').forEach(k => { k.onclick = () => wandDialog(+k.dataset.wand, 0.5); });
+  app.querySelectorAll('button[data-wand]').forEach(k => { k.onclick = () => geh('w', b.id, e, r, k.dataset.wand); });
+  if (raum.waende.length) {
+    $('#r-waende').onclick = () => geh('w', b.id, e, r, 0);
+    $('#r-saeule').onclick = () => { raum.koerper.push({ form: 'rechteck', s: 0.5, a: 0.5, b: 0.3, t: 0.3, h: null }); speichern(b); raumSeite(b, e, r); };
+    app.querySelectorAll('[data-kweg]').forEach(k => { k.onclick = () => { raum.koerper.splice(k.dataset.kweg, 1); speichern(b); raumSeite(b, e, r); }; });
+    app.querySelectorAll('[data-form]').forEach(f => { f.onchange = () => {
+      const k = raum.koerper[f.dataset.form];
+      k.form = f.value;
+      if (k.form === 'kreis') k.d ??= k.b ?? 0.3; else { k.b ??= k.d ?? 0.3; k.t ??= k.d ?? 0.3; }
+      speichern(b); raumSeite(b, e, r);
+    }; });
+    zahlFelder(app, (ziel, v) => {
+      const [j, k] = ziel.split('.');
+      if (k === 'h') { if (v != null && v >= 100) return false; raum.koerper[j].h = v; return true; }
+      if (v == null || v >= 100 || (['b', 't', 'd'].includes(k) && v <= 0)) return false;
+      raum.koerper[j][k] = v;
+      return true;
+    }, zeichnenNeu);
+  }
   app.querySelectorAll('input[data-feld]').forEach(f => {
+    f._uebernehmen = () => uebernehmen(f);
+    f._weiter = () => weiter(f);
     f.onfocus = () => { if (f.dataset.feld !== 'w') letztesFeld = f; f.select(); };
     f.onchange = () => uebernehmen(f);
     f.onkeydown = ev => {
@@ -216,10 +249,10 @@ function weiter(f) {
 
 // Laser: Wert ins zuletzt gewählte Maßfeld, dann weiter
 function laserWert(m) {
-  const f = letztesFeld?.isConnected ? letztesFeld : app.querySelector('input.leer[data-feld="l"]');
-  if (!f) return;
+  const f = letztesFeld?.isConnected ? letztesFeld : app.querySelector('input.leer');
+  if (!f?._uebernehmen) return;
   f.value = feldText(m);
-  if (uebernehmen(f)) weiter(f);
+  if (f._uebernehmen()) f._weiter();
 }
 if (Laser.moeglich()) {
   const k = $('#laser');
@@ -290,7 +323,8 @@ function skizzeEinrichten() {
     if (zeichnen || i == null) return;
     const [x, y] = svgPunkt(ev), P = punkteAnzeige(), [a, c] = [P[i], P[+i + 1]];
     const dx = c[0] - a[0], dy = c[1] - a[1];
-    wandDialog(+i, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1));
+    const t = ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1);
+    geh('w', aktiv.b.id, aktiv.e, aktiv.r, i, Math.min(0.9, Math.max(0.1, t)).toFixed(2));
   };
 }
 
@@ -359,6 +393,8 @@ function zeichnenNeu() {
       s.append(el('line', { x1: p1[0], y1: p1[1], x2: p2[0], y2: p2[1], stroke: o.art === 'tuer' ? '#a0522d' : '#2e86de', 'stroke-width': fs * 0.55 }));
     }
     const ab = fs * (1.1 + Math.abs(aussen[0]) * 1.8); // senkrechte Wände: waagrechter Text braucht mehr Platz
+    for (const an of wd.anschluesse || [])
+      s.append(el('circle', { cx: a[0] + u[0] * an.abstand - aussen[0] * fs * 0.35, cy: a[1] + u[1] * an.abstand - aussen[1] * fs * 0.35, r: fs * 0.18, fill: anschluss(an.art)[2] }));
     const m = [(a[0] + c[0]) / 2 + aussen[0] * ab, (a[1] + c[1]) / 2 + aussen[1] * ab];
     s.append(el('text', { x: m[0], y: m[1] + fs * 0.35, 'font-size': fs, 'text-anchor': 'middle', 'font-weight': 600,
       fill: wd.laenge == null ? '#d68910' : '#1f5f99' }, `${G.name(i)} ${wd.laenge == null ? '?' : de(wd.laenge)}`));
@@ -367,6 +403,17 @@ function zeichnenNeu() {
       s.append(el('text', { x: ecke[0] + (mx - ecke[0]) / d * fs * 1.6, y: ecke[1] + (my - ecke[1]) / d * fs * 1.6 + fs * 0.3, 'font-size': fs * 0.8, 'text-anchor': 'middle', fill: '#6b7280' }, `${de(wd.winkel, 0)}°`));
     }
     s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: 'transparent', 'stroke-width': fs * 2.2, 'data-i': i, style: 'cursor:pointer' }));
+  });
+  const dr = (raum.drehung ?? 0) * Math.PI / 180, dreh = ([x, y]) => [x * Math.cos(dr) - y * Math.sin(dr), -(x * Math.sin(dr) + y * Math.cos(dr))];
+  (raum.koerper || []).forEach(k => {
+    const [cx, cy] = G.koerperMitte(k);
+    const form = k.form === 'kreis'
+      ? el('circle', { cx: dreh([cx, cy])[0], cy: dreh([cx, cy])[1], r: k.d / 2 })
+      : el('polygon', { points: [[-1, 1], [1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => dreh([cx + sx * k.b / 2, cy + sy * k.t / 2])).join(' ') });
+    form.setAttribute('fill', '#c9ced6');
+    form.setAttribute('stroke', '#4b5563');
+    form.setAttribute('stroke-width', fs * 0.12);
+    s.append(form);
   });
   if (pr.luecke > 0.01) {
     const [e, a] = [P.at(-1), P[0]];
@@ -390,59 +437,152 @@ function zeichnenNeu() {
   };
 }
 
-// ---------- Wand-Fenster: Länge, Winkel, mitrechnen, Türen/Fenster, Ecke einfügen, löschen ----------
+// ---------- Wandansicht: eine Wand von innen, mit Türen, Fenstern, Anschlüssen und Maßen ----------
 const OEFFNUNG = { tuer: { breite: 0.885, hoehe: 2.01, bruestung: 0 }, fenster: { breite: 1.01, hoehe: 1.385, bruestung: 0.9 } };
+// wie ANSCHLUSSARTEN in geometrie.py am PC: Name, Kurzzeichen, Farbe, übliche Höhe (m)
+const ANSCHLUESSE = {
+  steckdose: ['Steckdose', 'S', '#d97706', 0.30], schalter: ['Lichtschalter', 'L', '#d97706', 1.05],
+  kw: ['Wasser kalt', 'KW', '#2563eb', 0.55], ww: ['Wasser warm', 'WW', '#dc2626', 0.55],
+  abwasser: ['Abwasser DN 50', 'AW', '#78716c', 0.50], wc: ['WC-Abfluss DN 100', 'WC', '#57534e', 0.22],
+  dusche: ['Duscharmatur', 'DA', '#0891b2', 1.10], lan: ['LAN-Dose', 'LAN', '#7c3aed', 0.30],
+  herd: ['Herdanschlussdose', 'H', '#b91c1c', 0.60], verteiler: ['Verteiler', 'V', '#7c2d12', 1.80],
+};
+const anschluss = art => ANSCHLUESSE[art] || [art, art, '#555', 0.3];
 
-function wandDialog(i, anteil) {
-  const { b, raum } = aktiv, w = raum.waende[i];
-  anteil = Math.min(0.9, Math.max(0.1, anteil));
-  const zahlFeld = (k, v, label) => `<label><small>${label}</small><input inputmode="decimal" data-k="${k}" value="${feldText(v)}"></label>`;
-  dlg.innerHTML = `<h3>Wand ${G.name(i)}</h3>
-    <label class="feld">Länge (m)<input id="d-l" inputmode="decimal" value="${feldText(w.laenge)}" placeholder="≈ ${de(w.skizze ?? 1, 1)}"></label>
-    <label class="feld">Winkel am Ende (°)<input id="d-w" inputmode="decimal" value="${feldText(Math.round(w.winkel * 10) / 10)}"></label>
-    <label class="feld" style="grid-template-columns:48px 1fr"><input type="checkbox" id="d-m" ${w.mitrechnen === false ? '' : 'checked'}>Wandfläche mitrechnen</label>
-    <div id="d-oe">${(w.oeffnungen || []).map((o, j) => `<div class="oe" data-j="${j}">
-      <select data-k="art"><option value="tuer" ${o.art === 'tuer' ? 'selected' : ''}>Tür</option><option value="fenster" ${o.art === 'fenster' ? 'selected' : ''}>Fenster</option></select>
-      <button class="klein weg" data-weg="${j}" aria-label="Öffnung löschen">✕</button>
-      ${zahlFeld('abstand', o.abstand, 'Abstand')}${zahlFeld('breite', o.breite, 'Breite')}${zahlFeld('hoehe', o.hoehe, 'Höhe')}${zahlFeld('bruestung', o.bruestung, 'Brüstung')}</div>`).join('')}</div>
-    <p class="hinweis" style="margin:4px 0">Abstand = von der linken Ecke (vom Raum aus gesehen) bis zur Öffnung.</p>
+/** Zahlenfeld: Enter = übernehmen und nächstes Feld (auch für den Laser im Tastaturmodus). */
+function zahlFelder(wurzel, schreiben, nachher) {
+  const felder = () => [...wurzel.querySelectorAll('input[data-ziel]')];
+  felder().forEach(f => {
+    f._uebernehmen = () => {
+      const v = G.zahl(f.value), ok = !Number.isNaN(v) && schreiben(f.dataset.ziel, v);
+      f.classList.toggle('falsch', !ok);
+      if (ok) { if (v != null) f.value = feldText(v); speichern(aktiv.b); nachher(); }
+      return ok;
+    };
+    f._weiter = () => { const l = felder(), n = l.slice(l.indexOf(f) + 1).find(x => !x.hasAttribute('data-still')); n ? n.focus() : f.blur(); };
+    f.onfocus = () => { letztesFeld = f; f.select(); };
+    f.onchange = () => f._uebernehmen();
+    f.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); if (f._uebernehmen()) f._weiter(); } };
+  });
+}
+
+function wandSeite(b, e, r, i, anteil) {
+  const raum = b.etagen[e].raeume[r], w = raum.waende[i], n = raum.waende.length;
+  aktiv = { b, raum };
+  w.oeffnungen ??= [];
+  w.anschluesse ??= [];
+  kopf(`${raum.name} · Wand ${G.name(i)}`);
+  app.onclick = null;
+  const feld = (ziel, v, label, platz = '') => `<label><small>${label}</small><input data-ziel="${ziel}" inputmode="decimal" enterkeyhint="next" value="${feldText(v)}" placeholder="${platz}"></label>`;
+  app.innerHTML = `
+    <div class="reihe wandnav"><button id="w-vor">‹ ${G.name((i - 1 + n) % n)}</button>
+      <b>Wand ${G.name(i)} von ${n}</b><button id="w-nach">${G.name((i + 1) % n)} ›</button></div>
+    <svg id="ansicht" xmlns="http://www.w3.org/2000/svg"></svg>
+    <label class="feld">Länge (m)<input data-ziel="laenge" inputmode="decimal" enterkeyhint="next" value="${feldText(w.laenge)}" placeholder="≈ ${de(w.skizze ?? 1, 1)}" class="${w.laenge == null ? 'leer' : ''}"></label>
+    <label class="feld">Winkel am Ende (°)<input data-ziel="winkel" data-still inputmode="decimal" value="${feldText(Math.round(w.winkel * 10) / 10)}"></label>
+    <label class="feld" style="grid-template-columns:48px 1fr"><input type="checkbox" id="w-mit" ${w.mitrechnen === false ? '' : 'checked'}>Wandfläche mitrechnen</label>
+    <h3>Türen und Fenster</h3>
+    <p class="hinweis">Abstand = von der linken Ecke (vom Raum aus auf die Wand gesehen) bis zur Öffnung.</p>
+    ${w.oeffnungen.map((o, j) => `<div class="oe" id="o-${j}">
+      <select data-art="o.${j}"><option value="tuer" ${o.art === 'tuer' ? 'selected' : ''}>Tür</option><option value="fenster" ${o.art === 'fenster' ? 'selected' : ''}>Fenster</option></select>
+      <button class="klein weg" data-weg="o.${j}" aria-label="löschen">✕</button>
+      ${feld(`o.${j}.abstand`, o.abstand, 'Abstand')}${feld(`o.${j}.breite`, o.breite, 'Breite')}${feld(`o.${j}.hoehe`, o.hoehe, 'Höhe')}${feld(`o.${j}.bruestung`, o.bruestung, 'Brüstung')}</div>`).join('')}
     <div class="reihe"><button data-neu="tuer">+ Tür</button><button data-neu="fenster">+ Fenster</button></div>
-    <p class="hinweis" style="margin:4px 0">Wand an der angetippten Stelle teilen:</p>
-    <div class="reihe"><button id="d-ecke">Ecke</button><button id="d-vor">Vorsprung</button><button id="d-nische">Nische</button></div>
-    <div class="reihe"><button class="weg" id="d-weg">Wand löschen</button></div>
-    <div class="reihe"><button class="haupt" id="d-ok">Fertig</button></div>`;
-  const fertig = () => dlg.close();
-  const lesen = (f, pruef) => {
-    const v = G.zahl(f.value), ok = !Number.isNaN(v) && pruef(v);
-    f.classList.toggle('falsch', !ok);
-    return ok ? v : undefined;
+    <h3>Anschlüsse (Elektro, Wasser)</h3>
+    <p class="hinweis">Abstand bis Mitte Dose, Höhe = Mitte über Fußboden.</p>
+    ${w.anschluesse.map((a, j) => `<div class="oe an" id="a-${j}">
+      <select data-art="a.${j}">${Object.entries(ANSCHLUESSE).map(([k, v]) => `<option value="${k}" ${a.art === k ? 'selected' : ''}>${v[0]}</option>`).join('')}
+        ${ANSCHLUESSE[a.art] ? '' : `<option selected>${esc(a.art)}</option>`}</select>
+      <button class="klein weg" data-weg="a.${j}" aria-label="löschen">✕</button>
+      ${feld(`a.${j}.abstand`, a.abstand, 'Abstand')}${feld(`a.${j}.hoehe`, a.hoehe, 'Höhe')}</div>`).join('')}
+    <div class="reihe"><button data-neu="steckdose">+ Steckdose</button><button data-neu="schalter">+ Schalter</button><button data-neu="kw">+ Wasser</button></div>
+    <h3>Wand teilen ${anteil == null ? '(in der Mitte)' : '(an der angetippten Stelle)'}</h3>
+    <div class="reihe"><button data-teilen="ecke">Ecke</button><button data-teilen="vor">Vorsprung</button><button data-teilen="nische">Nische</button></div>
+    <div class="reihe"><button class="weg" id="w-weg">Wand löschen</button></div>`;
+  const neu = () => wandSeite(b, e, r, i, anteil);
+  $('#w-vor').onclick = () => geh('w', b.id, e, r, (i - 1 + n) % n);
+  $('#w-nach').onclick = () => geh('w', b.id, e, r, (i + 1) % n);
+  $('#w-mit').onchange = ev => { w.mitrechnen = ev.target.checked; speichern(b); ansichtNeu(w, raum); };
+  zahlFelder(app, (ziel, v) => {
+    const [art, j, k] = ziel.split('.');
+    if (ziel === 'laenge') { if (v != null && v >= 100) return false; w.laenge = v; app.querySelector('[data-ziel="laenge"]').classList.toggle('leer', v == null); return true; }
+    if (ziel === 'winkel') { if (!(v > 0 && v < 360)) return false; w.winkel = w.skizzeWinkel = v; return true; }
+    if (v == null || v >= 100) return false;
+    (art === 'o' ? w.oeffnungen : w.anschluesse)[j][k] = v;
+    return true;
+  }, () => ansichtNeu(w, raum));
+  app.onchange = ev => {
+    const s = ev.target.dataset.art;
+    if (!s) return;
+    const [art, j] = s.split('.');
+    (art === 'o' ? w.oeffnungen : w.anschluesse)[j].art = ev.target.value;
+    speichern(b); ansichtNeu(w, raum);
   };
-  dlg.querySelector('#d-l').onchange = ev => { const v = lesen(ev.target, v => v == null || v < 100); if (v !== undefined) w.laenge = v; };
-  dlg.querySelector('#d-w').onchange = ev => { const v = lesen(ev.target, v => v > 0 && v < 360); if (v !== undefined) w.winkel = w.skizzeWinkel = v; };
-  dlg.querySelector('#d-m').onchange = ev => { w.mitrechnen = ev.target.checked; };
-  dlg.querySelector('#d-oe').onchange = ev => {
-    const o = w.oeffnungen[ev.target.closest('.oe').dataset.j], k = ev.target.dataset.k;
-    if (k === 'art') { o.art = ev.target.value; return; }
-    const v = lesen(ev.target, v => v != null && v < 100);
-    if (v !== undefined) o[k] = v;
-  };
-  dlg.onclick = ev => {
-    const t = ev.target;
-    if (t.dataset.weg != null) { w.oeffnungen.splice(+t.dataset.weg, 1); wandDialog(i, anteil); }
-    else if (t.dataset.neu) {
-      w.oeffnungen = w.oeffnungen || [];
-      w.oeffnungen.push({ art: t.dataset.neu, abstand: 0.3, ...OEFFNUNG[t.dataset.neu] });
-      wandDialog(i, anteil);
-    } else if (t.id === 'd-ecke') { G.eckeEinfuegen(raum, i, anteil); fertig(); }
-    else if (t.id === 'd-vor' || t.id === 'd-nische') { G.vorsprungEinfuegen(raum, i, anteil, t.id === 'd-vor' ? 0.3 : -0.3); fertig(); }
-    else if (t.id === 'd-weg') {
+  app.onclick = ev => {
+    const t = ev.target.closest('button');
+    if (!t) return;
+    const L = w.laenge ?? w.skizze ?? 1;
+    if (t.dataset.weg) { const [art, j] = t.dataset.weg.split('.'); (art === 'o' ? w.oeffnungen : w.anschluesse).splice(j, 1); }
+    else if (OEFFNUNG[t.dataset.neu]) w.oeffnungen.push({ art: t.dataset.neu, abstand: r2((L - OEFFNUNG[t.dataset.neu].breite) / 2), ...OEFFNUNG[t.dataset.neu] });
+    else if (t.dataset.neu) w.anschluesse.push({ art: t.dataset.neu, abstand: r2(L / 2), hoehe: anschluss(t.dataset.neu)[3], leitung: '' });
+    else if (t.dataset.teilen) {
+      const a = anteil ?? 0.5;
+      if (t.dataset.teilen === 'ecke') G.eckeEinfuegen(raum, i, a); else G.vorsprungEinfuegen(raum, i, a, t.dataset.teilen === 'vor' ? 0.3 : -0.3);
+      speichern(b);
+      return geh('r', b.id, e, r);
+    } else if (t.id === 'w-weg') {
       if (!confirm(`Wand ${G.name(i)} löschen? Die anderen Wände bleiben, die Lücke wird angezeigt.`)) return;
       G.wandLoeschen(raum, i);
-      fertig();
-    } else if (t.id === 'd-ok') fertig();
+      speichern(b);
+      return geh('r', b.id, e, r);
+    } else return;
+    speichern(b);
+    neu();
   };
-  dlg.onclose = () => { speichern(b); zeigen(); }; // Felder und Skizze neu
-  if (!dlg.open) dlg.showModal();
+  ansichtNeu(w, raum);
+}
+const r2 = v => Math.round(v * 100) / 100;
+
+/** Ansicht der Wand von innen: links = Wandanfang, unten = Fußboden. Mit Maßkette unten und Höhen. */
+function ansichtNeu(w, raum) {
+  const s = $('#ansicht');
+  if (!s) return;
+  s.replaceChildren();
+  const L = w.laenge ?? w.skizze ?? 1, H = raum.hoehe ?? 2.5, fs = Math.max(L, H) / 20;
+  s.setAttribute('viewBox', `${-fs * 3} ${-fs * 1.5} ${L + fs * 4} ${H + fs * 6}`);
+  const text = (x, y, t, mehr = {}) => s.append(el('text', { x, y, 'font-size': fs * 0.75, 'text-anchor': 'middle', fill: '#1b1b1b', ...mehr }, t));
+  s.append(el('rect', { x: 0, y: 0, width: L, height: H, fill: w.mitrechnen === false ? '#f1f1f1' : '#f4f8fc', stroke: '#1b1b1b', 'stroke-width': fs * 0.12,
+    'stroke-dasharray': w.mitrechnen === false ? `${fs * 0.5} ${fs * 0.4}` : 'none' }));
+  const kanten = [0, L];
+  w.oeffnungen.forEach((o, j) => {
+    const y = H - o.bruestung - o.hoehe, tuer = o.art === 'tuer';
+    s.append(el('rect', { x: o.abstand, y, width: o.breite, height: o.hoehe, fill: tuer ? '#f3e2d6' : '#dbeafb',
+      stroke: tuer ? '#a0522d' : '#2e86de', 'stroke-width': fs * 0.1, 'data-sel': `o-${j}` }));
+    text(o.abstand + o.breite / 2, y + o.hoehe / 2, `${de(o.breite)} × ${de(o.hoehe)}`, { 'pointer-events': 'none' });
+    if (o.bruestung > 0) text(o.abstand + o.breite / 2, H - o.bruestung / 2 + fs * 0.3, `Br. ${de(o.bruestung)}`, { fill: '#2e86de', 'pointer-events': 'none' });
+    kanten.push(o.abstand, o.abstand + o.breite);
+  });
+  w.anschluesse.forEach((a, j) => {
+    const [, kurz, farbe] = anschluss(a.art), x = a.abstand, y = H - a.hoehe;
+    s.append(el('circle', { cx: x, cy: y, r: fs * 0.4, fill: '#fff', stroke: farbe, 'stroke-width': fs * 0.1, 'data-sel': `a-${j}` }));
+    text(x, y + fs * 0.17, kurz, { fill: farbe, 'font-size': fs * 0.4, 'font-weight': 700, 'pointer-events': 'none' });
+    // Maße abwechselnd über/unter dem Zeichen, damit nahe Dosen (Waschtisch) lesbar bleiben
+    text(x, j % 2 ? y + fs * 1.0 : y - fs * 0.6, `${de(x)}|${de(a.hoehe)}`, { 'font-size': fs * 0.42, fill: farbe, 'pointer-events': 'none' });
+  });
+  // Maßkette unten (Abstände zwischen Wandecken und Öffnungskanten)
+  const k = [...new Set(kanten.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b), ym = H + fs * 1.6;
+  s.append(el('line', { x1: 0, y1: ym, x2: L, y2: ym, stroke: '#6b7280', 'stroke-width': fs * 0.05 }));
+  k.forEach((v, j) => {
+    s.append(el('line', { x1: v, y1: ym - fs * 0.4, x2: v, y2: ym + fs * 0.4, stroke: '#6b7280', 'stroke-width': fs * 0.05 }));
+    if (j) text((k[j - 1] + v) / 2, ym - fs * 0.25, de(v - k[j - 1]), { fill: '#374151' });
+  });
+  text(L / 2, H + fs * 3.4, `Wand ${de(L)} m${w.laenge == null ? ' (ungefähr)' : ''}`, { 'font-weight': 600, fill: w.laenge == null ? '#d68910' : '#1f5f99', 'font-size': fs * 0.85 });
+  text(-fs * 1.4, H / 2, `${de(H)}${raum.hoehe == null ? '?' : ''}`, { transform: `rotate(-90 ${-fs * 1.4} ${H / 2})`, fill: '#374151' });
+  s.onclick = ev => {
+    const sel = ev.target.dataset?.sel;
+    const f = sel && app.querySelector(`#${sel} input`);
+    if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); }
+  };
 }
 
 // ---------- Start ----------
