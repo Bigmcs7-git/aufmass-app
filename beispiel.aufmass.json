@@ -1,0 +1,223 @@
+{
+ "format": "aufmass",
+ "version": 1,
+ "erstellt": "2026-11-20T14:30",
+ "baustelle": "Beispiel Musterstraße 1",
+ "etagen": [
+  {
+   "name": "EG",
+   "raeume": [
+    {
+     "name": "Bad",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.3,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 2.1,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 3.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 1.1,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 2.1,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": ""
+    },
+    {
+     "name": "Flur",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 270,
+       "mitrechnen": false,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 5,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.5,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        },
+        {
+         "art": "tuer",
+         "abstand": 3,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": "L-Form"
+    },
+    {
+     "name": "Küche",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3,
+       "winkel": 135,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 1.414,
+       "winkel": 135,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 0.5,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 1.5,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": "Ecke 45° abgeschrägt"
+    }
+   ]
+  },
+  {
+   "name": "OG",
+   "raeume": [
+    {
+     "name": "Schlafen",
+     "hoehe": 2.45,
+     "waende": [
+      {
+       "laenge": 4.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.2,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 3.6,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 4.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 1.6,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 3.6,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": ""
+    }
+   ]
+  }
+ ]
+}
