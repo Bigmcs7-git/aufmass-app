@@ -109,3 +109,14 @@ test('Ungültige Dateien werden abgewiesen', () => {
   d.etagen[0].raeume[0].waende[0].winkel = 400;
   assert.match(pruefeDatei(d), /Winkel/);
 });
+
+test('Bosch GLM: Messwert aus dem Bluetooth-Rahmen lesen', async () => {
+  const { boschWert } = await import('./laser.js');
+  const b = new DataView(new ArrayBuffer(16));
+  [0xc0, 0x55, 0x10, 0x06].forEach((v, i) => b.setUint8(i, v));
+  b.setFloat32(7, 1.825, true);
+  nah(boschWert(b), 1.825, 1e-6);
+  assert.equal(boschWert(new DataView(new Uint8Array([0xc0, 0x55, 0x02, 0x01, 0x00, 0x1a]).buffer)), null); // Antwort ohne Messung
+  b.setUint8(0, 0x00);
+  assert.equal(boschWert(b), null);
+});

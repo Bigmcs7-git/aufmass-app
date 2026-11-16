@@ -6,7 +6,7 @@ Das Dateiformat steht in `..\ARBEITSPLAN_Grundriss.md`, Abschnitt 3 (Version 1).
 ## Dateien
 - `index.html`, `style.css`, `app.js`: Bildschirm (Baustelle → Etagen → Räume, Skizze, Maßfelder, Teilen/Einlesen)
 - `geo.js`: Rechnen ohne Bildschirm (Umriss, Lücke, Winkel, Export, Prüfung beim Einlesen)
-- `laser.js`: Bluetooth-Laser (zunächst Leica DISTO, ungeprüft). Der Tastaturmodus des Lasers geht immer.
+- `laser.js`: Bluetooth-Laser: Bosch GLM „C“ (Pauls GLM 150-27 C) und Leica DISTO, beide am Gerät noch ungeprüft.
 - `sw.js`, `manifest.webmanifest`, `icon-*.png`: Installation und Offline-Betrieb.
   **Bei jeder neuen Version `STAND` in `sw.js` erhöhen**, sonst behalten die Handys die alte Fassung.
 - `beispiel.aufmass.json`: Beispieldatei (4 Räume: Rechteck, L-Form, 45°-Ecke)
