@@ -206,3 +206,47 @@ test('PC-Plan hin und zurück: Säulen, Anschlüsse und unbekannte Felder bleibe
   assert.deepEqual(exportieren(b, new Date(2026, 10, 18, 8, 0)), vomPc);
   assert.match(pruefeDatei({ ...vomPc, etagen: [{ name: 'EG', raeume: [{ name: 'X', waende: [], koerper: [{ form: 'kreis', x: 1, y: 1 }] }] }] }), /Säule/);
 });
+
+test('Lücke schließen: Toleranz passt das letzte Maß an, gemessenes Maß bleibt', async () => {
+  const { lueckeSchliessen, wandLaenge } = await import('./geo.js');
+  const raum = { waende: [w(4), w(3), w(3.998), w(3.003)] };
+  let r = lueckeSchliessen(raum, 0.002);
+  assert.equal(r.zustand, 'frage'); // Lücke 3,6 mm > 2 mm Toleranz
+  r = lueckeSchliessen(raum, 0.005);
+  assert.equal(r.zustand, 'gerundet');
+  assert.deepEqual(r.korrigiert.sort(), [2, 3]); // wie am PC: letzte senkrechte und waagrechte Wand
+  nah(wandLaenge(raum.waende[2]), 4, 1e-6); nah(wandLaenge(raum.waende[3]), 3, 1e-6);
+  assert.equal(raum.waende[2].laenge, 3.998); // echtes Maß bleibt
+  assert.ok(pruefen(raum.waende).zu);
+  const d = exportieren({ id: 'x', baustelle: 'x', etagen: [{ name: 'EG', raeume: [{ name: 'R', ...raum }] }] });
+  const wd = d.etagen[0].raeume[0].waende[2];
+  assert.equal(wd.laenge, 4); assert.equal(wd.gemessen, 3.998);
+  const zurueck = einlesen(d, 'y').etagen[0].raeume[0].waende[2];
+  assert.equal(zurueck.laenge, 3.998); nah(zurueck.korrektur, 0.002, 1e-9);
+  // Wahl „Winkel“: die letzten Ecken nehmen die Lücke auf, Maße bleiben
+  const r2 = { waende: [w(4), w(3), w(3.95), w(3)], schluss: 'winkel' };
+  const e2 = lueckeSchliessen(r2, 0);
+  assert.equal(e2.zustand, 'winkel');
+  assert.ok(pruefen(r2.waende).zu);
+  assert.deepEqual(r2.waende.map(x => x.laenge), [4, 3, 3.95, 3]);
+  // zurück auf „fragen“: Winkel wieder 90°
+  r2.schluss = null;
+  assert.equal(lueckeSchliessen(r2, 0).zustand, 'frage');
+  assert.deepEqual(r2.waende.map(x => x.winkel), [90, 90, 90, 90]);
+});
+
+test('Warnungen: Teile außerhalb der Wand oder des Raums', async () => {
+  const { warnungen } = await import('./geo.js');
+  const raum = { hoehe: 2.5, waende: [
+    w(4, 90, { oeffnungen: [{ art: 'tuer', abstand: 3.5, breite: 0.885, hoehe: 2.01, bruestung: 0 }], anschluesse: [{ art: 'steckdose', abstand: 4.2, hoehe: 0.3 }] }),
+    w(3, 90, { oeffnungen: [{ art: 'fenster', abstand: 1, breite: 1, hoehe: 1.8, bruestung: 0.9 }] }), w(4), w(3)],
+    koerper: [{ form: 'rechteck', s: 3.9, a: 1, b: 0.3, t: 0.3, h: null }, { form: 'kreis', s: 1, a: 1, d: 0.3, h: null }] };
+  const t = warnungen(raum).map(x => x.ziel);
+  assert.deepEqual(t, ['o-0', 'a-0', 'o-0', 'k-0']);
+});
+
+test('Eingabe in Zentimeter', () => {
+  assert.equal(zahl('320,5', 'cm'), 3.205);
+  assert.equal(zahl('3,205 m', 'cm'), 3.205);
+  assert.equal(zahl('3205 mm', 'cm'), 3.205);
+});

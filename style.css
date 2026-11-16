@@ -27,7 +27,7 @@ svg#skizze { display: block; width: 100%; height: 46vh; min-height: 260px; borde
              background: #fafcff; touch-action: none; user-select: none; }
 #status { min-height: 1.4em; margin: 6px 0; font-size: 16px; }
 #status .fehler { color: var(--rot); font-weight: 600; }
-.mass { display: grid; grid-template-columns: 48px 1fr auto 76px 26px; gap: 6px; align-items: center; margin: 4px 0; }
+.mass { display: grid; grid-template-columns: 72px 1fr auto 76px 26px; gap: 6px; align-items: center; margin: 4px 0; }
 .mass b { font-size: 20px; text-align: center; }
 .mass b.aus { color: var(--grau); text-decoration: line-through; }
 input, textarea, select { font: inherit; min-height: 48px; padding: 6px 10px; border: 2px solid #b8c4d2; border-radius: 10px; width: 100%; background: #fff; }
@@ -45,3 +45,23 @@ svg#ansicht { display: block; width: 100%; height: 38vh; min-height: 220px; bord
 .wandnav b { flex: 2 1 auto; text-align: center; }
 .oe.an select { grid-column: 1 / 4; }
 h3 { margin: 18px 0 4px; font-size: 19px; }
+.wbtn { flex-direction: column; line-height: 1.05; padding: 2px 4px; }
+.wbtn b { font-size: 20px; }
+.wbtn small { font-size: 11px; color: var(--grau); }
+.ger { grid-column: 1 / -1; color: #b45309; font-size: 14px; }
+input.gerundet { border-color: #d97706; }
+.frage { margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: #fff4e5; border: 2px solid #f0a33a; font-size: 16px; }
+.warnliste { margin: 6px 0; padding: 0; list-style: none; }
+.warnliste li { margin: 4px 0; padding: 8px 10px; border-radius: 10px; background: #fdecea; color: var(--rot); font-size: 15px; cursor: pointer; }
+.oe.warn { outline: 3px solid var(--rot); }
+.oe.gewaehlt { outline: 3px solid var(--blau); }
+.oe .bez { grid-column: span 2; min-height: 40px; align-self: end; font-size: 15px; padding: 0 6px; }
+.oe .bez + label { grid-column: span 2; }
+.oe .breit { grid-column: 1 / -1; }
+.oe .halb { grid-column: span 2; }
+.haken { display: flex; gap: 8px; align-items: center; min-height: 48px; }
+.haken input[type=checkbox] { width: 28px; min-height: 28px; height: 28px; }
+.wandname { flex: 2 1 auto; display: flex; flex-direction: column; align-items: center; }
+.wandname small { color: var(--grau); font-size: 14px; }
+svg#karte { display: block; width: 100%; height: 90px; margin: 4px 0; }
+#einheit { min-width: 56px; }

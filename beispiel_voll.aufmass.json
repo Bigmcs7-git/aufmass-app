@@ -1,0 +1,343 @@
+{
+ "format": "aufmass",
+ "version": 1,
+ "erstellt": "2026-11-16T12:28",
+ "id": "bsp",
+ "baustelle": "Beispiel Musterstraße 1",
+ "etagen": [
+  {
+   "name": "EG",
+   "raeume": [
+    {
+     "name": "Bad",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.3,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 2.1,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 3.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 1.1,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 2.1,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": ""
+    },
+    {
+     "name": "Flur",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 270,
+       "mitrechnen": false,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 5,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.5,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        },
+        {
+         "art": "tuer",
+         "abstand": 3,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": "L-Form"
+    },
+    {
+     "name": "Küche",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 3,
+       "winkel": 135,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 1.414,
+       "winkel": 135,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 0.5,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 1.5,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": "Ecke 45° abgeschrägt"
+    },
+    {
+     "name": "Test gerundet",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 4.003,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.3,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0,
+         "typ": "einfach",
+         "anschlag": "links",
+         "oeffnet": "innen"
+        }
+       ],
+       "anschluesse": [
+        {
+         "art": "steckdose",
+         "abstand": 3.8,
+         "hoehe": 0.3,
+         "bezug_s": "rechts",
+         "leitung": "oben"
+        }
+       ]
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 4.003,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [],
+       "gemessen": 4
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [],
+       "gemessen": 3.001
+      }
+     ],
+     "notiz": "",
+     "koerper": [
+      {
+       "form": "rechteck",
+       "x": 3.65,
+       "y": 2.65,
+       "b": 0.3,
+       "t": 0.3,
+       "h": null,
+       "name": "Schacht"
+      }
+     ]
+    },
+    {
+     "name": "Test Vorsprung",
+     "hoehe": 2.5,
+     "waende": [
+      {
+       "laenge": 4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 1.4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 0.3,
+       "winkel": 270,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 1.2,
+       "winkel": 270,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 0.3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 1.4,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 3,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": ""
+    }
+   ]
+  },
+  {
+   "name": "OG",
+   "raeume": [
+    {
+     "name": "Schlafen",
+     "hoehe": 2.45,
+     "waende": [
+      {
+       "laenge": 4.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "tuer",
+         "abstand": 0.2,
+         "breite": 0.885,
+         "hoehe": 2.01,
+         "bruestung": 0
+        }
+       ]
+      },
+      {
+       "laenge": 3.6,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      },
+      {
+       "laenge": 4.2,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": [
+        {
+         "art": "fenster",
+         "abstand": 1.6,
+         "breite": 1.01,
+         "hoehe": 1.385,
+         "bruestung": 0.9
+        }
+       ]
+      },
+      {
+       "laenge": 3.6,
+       "winkel": 90,
+       "mitrechnen": true,
+       "oeffnungen": []
+      }
+     ],
+     "notiz": ""
+    }
+   ]
+  }
+ ]
+}

@@ -5,6 +5,9 @@
 const rad = d => d * Math.PI / 180;
 const r3 = v => Math.round(v * 1000) / 1000;
 
+/** Länge, mit der gerechnet wird: gemessenes Maß plus Korrektur beim Schließen kleiner Lücken (gemessen bleibt erhalten). */
+export const wandLaenge = w => w.laenge == null ? null : w.laenge + (w.korrektur || 0);
+
 export const name = i => i < 26 ? String.fromCharCode(65 + i) : name(Math.floor(i / 26) - 1) + name(i % 26);
 
 /** Eckpunkte [x, y]; fehlt ein Maß, gilt die Skizzenlänge. drehung = Richtung von Wand A in Grad (nur Anzeige). */
@@ -12,7 +15,7 @@ export function punkte(waende, drehung = 0) {
   let x = 0, y = 0, r = drehung;
   const p = [[0, 0]];
   for (const w of waende) {
-    const l = w.laenge ?? w.skizze ?? 1;
+    const l = wandLaenge(w) ?? w.skizze ?? 1;
     x += l * Math.cos(rad(r));
     y += l * Math.sin(rad(r));
     p.push([x, y]);
@@ -81,7 +84,7 @@ export function wandLoeschen(raum, i) {
 /** Ecke in Wand i einfügen (anteil 0…1 ab Wandanfang). Neue Ecke 180° = gerade, Maße beider Teile neu messen. */
 export function eckeEinfuegen(raum, i, anteil) {
   const w = raum.waende[i];
-  const l = w.laenge ?? w.skizze ?? 1;
+  const l = wandLaenge(w) ?? w.skizze ?? 1;
   const vorn = (w.oeffnungen || []).filter(o => o.abstand < l * anteil);
   const hinten = (w.oeffnungen || []).filter(o => o.abstand >= l * anteil).map(o => ({ ...o, abstand: r3(o.abstand - l * anteil) }));
   const a = { ...w, laenge: null, winkel: 180, skizzeWinkel: 180, skizze: Math.round(l * anteil * 100) / 100, oeffnungen: vorn };
@@ -92,7 +95,7 @@ export function eckeEinfuegen(raum, i, anteil) {
 /** Vorsprung (tiefe > 0, ragt in den Raum, z. B. Schacht) oder Nische (tiefe < 0) in Wand i einbauen, um die
  *  Stelle anteil (0…1) herum. Aus einer Wand werden fünf; die neuen Teile sind ungemessen (Skizzenlängen). */
 export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
-  const w = raum.waende[i], L = w.laenge ?? w.skizze ?? 1, r2 = v => Math.round(v * 100) / 100;
+  const w = raum.waende[i], L = wandLaenge(w) ?? w.skizze ?? 1, r2 = v => Math.round(v * 100) / 100;
   const b = L * 0.3, a = Math.min(Math.max(L * anteil - b / 2, L * 0.05), L * 0.65), c = L - a - b, t = Math.abs(tiefe);
   const [rein, raus] = tiefe > 0 ? [90, 270] : [270, 90]; // in den Raum hinein = Rechtsknick (90°) im Uhrzeigersinn
   const teil = (skizze, winkel, oe = []) => ({ laenge: null, winkel, skizzeWinkel: winkel, mitrechnen: w.mitrechnen, oeffnungen: oe, skizze: r2(skizze) });
@@ -107,23 +110,41 @@ export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
   raum.waende.splice(i, 1, ...neu);
 }
 
+/** Neues Maß für eine Wand. Teile mit Bezug „rechts“ behalten ihren Abstand zum rechten Wandende (wie „bezug“ am PC). */
+export function laengeSetzen(w, neu) {
+  const alt = wandLaenge(w) ?? w.skizze ?? 1;
+  w.laenge = neu;
+  const d = (wandLaenge(w) ?? w.skizze ?? 1) - alt;
+  if (Math.abs(d) < 1e-9) return;
+  for (const o of w.oeffnungen || []) if (o.bezug === 'rechts') o.abstand = r3(o.abstand + d);
+  for (const a of w.anschluesse || []) if (a.bezug_s === 'rechts') a.abstand = r3(a.abstand + d);
+}
+
+/** Neue Raumhöhe. Anschlüsse, die von der Decke aus gemessen wurden, behalten ihren Abstand zur Decke. */
+export function hoeheSetzen(raum, neu) {
+  const alt = raum.hoehe;
+  raum.hoehe = neu;
+  if (alt == null || neu == null) return;
+  for (const w of raum.waende) for (const a of w.anschluesse || []) if (a.bezug_h === 'oben') a.hoehe = r3(a.hoehe + neu - alt);
+}
+
 const gerade = v => [90, 180, 270].some(k => Math.abs(v - k) < 0.5);
 
 /** Winkel schräger Ecken aus den gemessenen Längen ausrechnen. Normale Ecken (90°, 270°, 180°) bleiben fest;
  *  nur Ecken, die in der Skizze schräg sind, werden so verstellt, dass sich der Umriss schließt (bei mehr als drei
  *  schrägen Ecken mit möglichst kleiner Änderung gegenüber der Skizze). Gibt null zurück, wenn nichts zu rechnen ist
  *  (Maß fehlt oder weniger als 2 schräge Ecken), sonst {frei: [Wandnummern], luecke: verbleibende Lücke in m}. */
-export function winkelAusrechnen(waende) {
+export function winkelAusrechnen(waende, vorgabe = null) {
   const n = waende.length;
   if (n < 3 || waende.some(w => w.laenge == null)) return null;
   waende.forEach(w => { w.skizzeWinkel ??= w.winkel; });
-  const frei = waende.map((w, i) => i).filter(i => !gerade(waende[i].skizzeWinkel));
+  const frei = vorgabe ?? waende.map((w, i) => i).filter(i => !gerade(waende[i].skizzeWinkel));
   const k = frei.length;
   if (k < 2) return null;
   const th = waende.map(w => w.skizzeWinkel);
   const d0 = ((n - 2) * 180 - th.reduce((s, v) => s + v, 0)) / k; // Winkelsumme muss stimmen
   frei.forEach(i => { th[i] += d0; });
-  const mitTh = () => waende.map((w, i) => ({ laenge: w.laenge, winkel: th[i] }));
+  const mitTh = () => waende.map((w, i) => ({ laenge: wandLaenge(w), winkel: th[i] }));
   for (let it = 0; it < 60; it++) {
     const P = punkte(mitTh()), [ex, ey] = P[n];
     if (Math.hypot(ex, ey) < 1e-9) break;
@@ -155,13 +176,98 @@ export function winkelAusrechnen(waende) {
   return { frei, luecke: pruefen(waende).luecke };
 }
 
-/** Eingabe vom Finger oder Laser (Tastaturmodus): "3,205", "3.205 m", "320,5 cm", "3205mm" -> Meter; leer -> null. */
-export function zahl(text) {
+/** Lücke schließen, wenn alle Wände gemessen sind. Schräge Ecken der Skizze werden immer ausgerechnet. Bleibt eine
+ *  Lücke: bis zur Toleranz (m) oder nach Wahl raum.schluss = 'mass' werden die letzten Maße angepasst (wie am PC:
+ *  letzte Wand in jeder Richtung; das gemessene Maß bleibt, die Änderung steht in w.korrektur), bei 'winkel' nehmen
+ *  die letzten Ecken die Lücke auf. Sonst {zustand: 'frage'}: der Benutzer soll wählen.
+ *  zustand: 'offen' (Maß fehlt) | 'zu' | 'gerundet' | 'winkel' | 'frage'. */
+export function lueckeSchliessen(raum, toleranz = 0) {
+  const w = raum.waende, n = w.length;
+  const zurueck = () => w.forEach(x => { x.skizzeWinkel ??= x.winkel; if (gerade(x.skizzeWinkel)) x.winkel = x.skizzeWinkel; x.korrektur = 0; });
+  zurueck();
+  if (n < 3 || w.some(x => x.laenge == null)) return { zustand: 'offen', frei: [], korrigiert: [] };
+  const auto = winkelAusrechnen(w), basis = { frei: auto?.frei || [], korrigiert: [] };
+  const luecke = pruefen(w).luecke;
+  if (luecke <= 0.0005) return { ...basis, zustand: 'zu', luecke };
+  const wahl = raum.schluss || (luecke <= toleranz + 1e-9 ? 'mass' : null);
+  if (wahl === 'mass') {
+    const k = massKorrektur(w);
+    if (k && k.every(([i, d]) => Math.abs(d) <= 0.05 && w[i].laenge + d > 0)) {
+      k.forEach(([i, d]) => { w[i].korrektur = Math.round(d * 10000) / 10000; });
+      return { ...basis, zustand: 'gerundet', luecke, korrigiert: k.map(([i]) => i) };
+    }
+  } else if (wahl === 'winkel') {
+    const frei = [...new Set([...basis.frei, n - 3, n - 2, n - 1].filter(i => i >= 0))];
+    const r = winkelAusrechnen(w, frei);
+    if (r && r.luecke <= 0.0005 && frei.every(i => Math.abs(w[i].winkel - w[i].skizzeWinkel) <= 15))
+      return { ...basis, frei, zustand: 'winkel', luecke };
+    zurueck();
+    winkelAusrechnen(w);
+  }
+  return { ...basis, zustand: 'frage', luecke };
+}
+
+/** Wie am PC (aufmass.schliessen): letzte Wand und die letzte nicht parallele Wand davor so ändern, dass die Lücke zu ist. */
+function massKorrektur(w) {
+  const n = w.length, u = [];
+  let h = 0;
+  for (const x of w) { u.push([Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180)]); h -= 180 - x.winkel; }
+  const [gx, gy] = punkte(w)[n], j = n - 1;
+  const kreuz = k => u[j][0] * u[k][1] - u[k][0] * u[j][1];
+  let k = j - 1;
+  while (k >= 0 && Math.abs(kreuz(k)) < 0.3) k--;
+  if (k < 0) return null;
+  const det = kreuz(k);
+  const a = (-gx * u[k][1] + u[k][0] * gy) / det, b = (-u[j][0] * gy + gx * u[j][1]) / det;
+  return [[j, a], [k, b]].filter(([, d]) => Math.abs(d) > 1e-7);
+}
+
+const inPolygon = ([x, y], p) => {
+  let drin = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++)
+    if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) drin = !drin;
+  return drin;
+};
+const de2 = v => v.toFixed(2).replace('.', ',');
+
+/** Was außerhalb des Arbeitsbereichs liegt: [{text, wand, ziel}] (ziel z. B. 'o-0', 'a-1', 'k-0'). */
+export function warnungen(raum) {
+  const aus = [], H = raum.hoehe, T = 0.005;
+  raum.waende.forEach((w, i) => {
+    const L = wandLaenge(w) ?? w.skizze ?? 1, wn = `Wand ${name(i)}`;
+    (w.oeffnungen || []).forEach((o, j) => {
+      const was = `${o.art === 'tuer' ? 'Tür' : 'Fenster'} ${j + 1}`;
+      if (o.abstand + o.breite > L + T) aus.push({ wand: i, ziel: `o-${j}`, text: `${wn}: ${was} ragt ${de2(o.abstand + o.breite - L)} m über das Wandende hinaus.` });
+      if (H != null && o.bruestung + o.hoehe > H + T) aus.push({ wand: i, ziel: `o-${j}`, text: `${wn}: ${was} ist ${de2(o.bruestung + o.hoehe - H)} m höher als der Raum.` });
+      (w.oeffnungen || []).slice(j + 1).forEach((q, k) => {
+        if (o.abstand < q.abstand + q.breite - T && q.abstand < o.abstand + o.breite - T)
+          aus.push({ wand: i, ziel: `o-${j}`, text: `${wn}: ${was} überschneidet sich mit Öffnung ${j + k + 2}.` });
+      });
+    });
+    (w.anschluesse || []).forEach((a, j) => {
+      if (a.abstand > L + T) aus.push({ wand: i, ziel: `a-${j}`, text: `${wn}: Anschluss ${j + 1} liegt ${de2(a.abstand - L)} m hinter dem Wandende.` });
+      if (H != null && a.hoehe > H + T) aus.push({ wand: i, ziel: `a-${j}`, text: `${wn}: Anschluss ${j + 1} liegt über der Decke.` });
+    });
+  });
+  const poly = punkte(raum.waende).slice(0, -1);
+  (raum.koerper || []).forEach((k, j) => {
+    if (raum.waende.length < 3) return;
+    const [cx, cy] = koerperMitte(k), [hx, hy] = halb(k);
+    const ecken = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => [cx + sx * hx * 0.999, cy + sy * hy * 0.999]);
+    if (!ecken.every(e => inPolygon(e, poly))) aus.push({ ziel: `k-${j}`, text: `Säule ${j + 1} liegt (teilweise) außerhalb des Raums.` });
+    if (H != null && k.h != null && k.h > H + T) aus.push({ ziel: `k-${j}`, text: `Säule ${j + 1} ist höher als der Raum.` });
+  });
+  return aus;
+}
+
+/** Eingabe vom Finger oder Laser (Tastaturmodus): "3,205", "3.205 m", "320,5 cm", "3205mm" -> Meter; leer -> null.
+ *  Ohne Einheit gilt die eingestellte (m oder cm). Auf den Millimeter gerundet. */
+export function zahl(text, einheit = 'm') {
   const t = String(text).trim().replace(',', '.');
   if (t === '') return null;
   const m = /^(\d+(?:\.\d*)?|\.\d+)\s*(mm|cm|m)?$/i.exec(t);
   if (!m) return NaN;
-  return r3(Number(m[1]) / ({ mm: 1000, cm: 100 }[(m[2] || '').toLowerCase()] || 1));
+  return r3(Number(m[1]) / ({ mm: 1000, cm: 100, m: 1 }[(m[2] || einheit).toLowerCase()] || 1));
 }
 
 // Felder, die die App selbst kennt; alles andere aus einer PC-Datei wird unverändert durchgereicht, damit beim Hin
@@ -170,7 +276,7 @@ const BEKANNT = {
   baustelle: ['id', 'baustelle', 'etagen', 'geaendert', 'format', 'version', 'erstellt'],
   etage: ['name', 'raeume'],
   raum: ['name', 'hoehe', 'waende', 'notiz', 'koerper', 'drehung'],
-  wand: ['laenge', 'winkel', 'mitrechnen', 'oeffnungen', 'anschluesse', 'skizze', 'skizzeWinkel'],
+  wand: ['laenge', 'winkel', 'mitrechnen', 'oeffnungen', 'anschluesse', 'skizze', 'skizzeWinkel', 'gemessen', 'korrektur'],
   oeffnung: ['art', 'abstand', 'breite', 'hoehe', 'bruestung'],
   anschluss: ['art', 'abstand', 'hoehe'],
   koerper: ['form', 'x', 'y', 's', 'a', 'b', 't', 'd', 'h'],
@@ -206,13 +312,14 @@ export function exportieren(b, jetzt = new Date()) {
       const raum = { name: r.name };
       if (r.hoehe != null) raum.hoehe = r3(r.hoehe);
       raum.waende = r.waende.map(w => ({
-        laenge: w.laenge == null ? null : r3(w.laenge),
+        laenge: w.laenge == null ? null : r3(wandLaenge(w)),
         winkel: Math.round(w.winkel * 100) / 100,
         mitrechnen: w.mitrechnen !== false,
         oeffnungen: (w.oeffnungen || []).map(o => ({ art: o.art, abstand: r3(o.abstand), breite: r3(o.breite),
                                                      hoehe: r3(o.hoehe), bruestung: r3(o.bruestung ?? 0), ...rest(o, 'oeffnung') })),
         ...(w.anschluesse?.length ? { anschluesse: w.anschluesse.map(a => ({ art: a.art, abstand: r3(a.abstand), hoehe: r3(a.hoehe), ...rest(a, 'anschluss') })) } : {}),
         ...(w.laenge == null && w.skizze != null ? { skizze: Math.round(w.skizze * 100) / 100 } : {}),
+        ...(w.korrektur ? { gemessen: r3(w.laenge) } : {}), // Lücke geschlossen: echtes Maß geht mit
         ...rest(w, 'wand'),
       }));
       raum.notiz = r.notiz || '';
@@ -246,6 +353,7 @@ export function pruefeDatei(d) {
       for (const [i, w] of r.waende.entries()) {
         if (w.laenge !== null && !zahlOk(w.laenge)) return `${wo}, Wand ${name(i)}: Länge ungültig.`;
         if (!(typeof w.winkel === 'number' && w.winkel >= 0 && w.winkel <= 360)) return `${wo}, Wand ${name(i)}: Winkel ungültig.`;
+        if (w.gemessen != null && !zahlOk(w.gemessen)) return `${wo}, Wand ${name(i)}: gemessenes Maß ungültig.`;
         if (w.skizze != null && !zahlOk(w.skizze)) return `${wo}, Wand ${name(i)}: Skizzenlänge ungültig.`;
         if (w.mitrechnen != null && typeof w.mitrechnen !== 'boolean') return `${wo}, Wand ${name(i)}: „mitrechnen“ ungültig.`;
         if (w.oeffnungen != null && !Array.isArray(w.oeffnungen)) return `${wo}, Wand ${name(i)}: Öffnungen ungültig.`;
@@ -267,7 +375,7 @@ export function einlesen(d, neueId) {
     ...rest(d, 'baustelle'), id: d.id || neueId, baustelle: d.baustelle,
     etagen: d.etagen.map(e => ({ ...rest(e, 'etage'), name: e.name, raeume: e.raeume.map(r => {
       const waende = r.waende.map(w => ({
-        ...rest(w, 'wand'), laenge: w.laenge, winkel: w.winkel, mitrechnen: w.mitrechnen !== false,
+        ...rest(w, 'wand'), laenge: w.gemessen ?? w.laenge, korrektur: w.gemessen != null && w.laenge != null ? w.laenge - w.gemessen : 0, winkel: w.winkel, mitrechnen: w.mitrechnen !== false,
         oeffnungen: (w.oeffnungen || []).map(o => structuredClone(o)),
         anschluesse: (w.anschluesse || []).map(a => structuredClone(a)),
         skizze: w.skizze ?? w.laenge ?? 1 }));
