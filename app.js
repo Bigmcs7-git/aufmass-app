@@ -94,6 +94,7 @@ async function einlesen(datei) {
     if (!confirm(`„${alt.baustelle}“ ist schon auf diesem Gerät (zuletzt geändert ${stand}).\n`
       + `Durch die Datei vom ${d.erstellt.replace('T', ' ')} ersetzen? Änderungen hier seit dem Export gehen dabei verloren.`)) return;
     alle = alle.filter(x => x !== alt);
+    b.toleranz ??= alt.toleranz; // Einstellung dieses Geräts behalten, der PC schreibt sie nicht mit
   }
   alle.push(b);
   await speichern(b);

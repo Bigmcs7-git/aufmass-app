@@ -250,3 +250,13 @@ test('Eingabe in Zentimeter', () => {
   assert.equal(zahl('3,205 m', 'cm'), 3.205);
   assert.equal(zahl('3205 mm', 'cm'), 3.205);
 });
+
+test('Vom PC zurück: schon gerundete Maße bleiben gerundet (auch bei kleinerer Toleranz)', async () => {
+  const { lueckeSchliessen } = await import('./geo.js');
+  const d = JSON.parse(readFileSync(new URL('./beispiel_voll.aufmass.json', import.meta.url), 'utf8'));
+  assert.equal(pruefeDatei(d), null);
+  const r = einlesen(d, 'x').etagen[0].raeume.find(q => q.name === 'Test gerundet');
+  assert.equal(r.schluss, 'mass');
+  assert.equal(lueckeSchliessen(r, 0.002).zustand, 'gerundet');
+  assert.ok(pruefen(r.waende).zu);
+});

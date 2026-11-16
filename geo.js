@@ -380,7 +380,9 @@ export function einlesen(d, neueId) {
         anschluesse: (w.anschluesse || []).map(a => structuredClone(a)),
         skizze: w.skizze ?? w.laenge ?? 1 }));
       const koerper = (r.koerper || []).map(k => koerperImport(k, waende));
-      return { ...rest(r, 'raum'), name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0, waende, koerper };
+      // schon gerundete Maße (gemessen ≠ laenge): diese Entscheidung bleibt, auch wenn die Toleranz hier kleiner ist
+      const schluss = r.schluss ?? (r.waende.some(w => w.gemessen != null) ? 'mass' : undefined);
+      return { ...rest(r, 'raum'), ...(schluss ? { schluss } : {}), name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0, waende, koerper };
     }) })),
   };
 }
