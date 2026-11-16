@@ -171,9 +171,9 @@ function raumSeite(b, e, r) {
       <input data-feld="l" data-i="${i}" inputmode="decimal" enterkeyhint="next" aria-label="Länge Wand ${G.name(i)}"
              placeholder="≈ ${de(w.skizze ?? 1, 1)}" value="${feldText(w.laenge)}" class="${w.laenge == null ? 'leer' : ''}">
       <span>m</span>
-      <input data-feld="w" data-i="${i}" inputmode="decimal" tabindex="-1" aria-label="Winkel Ecke nach ${G.name(i)}" value="${feldText(w.winkel)}">
+      <input data-feld="w" data-i="${i}" inputmode="decimal" tabindex="-1" aria-label="Winkel Ecke nach ${G.name(i)}" value="${feldText(Math.round(w.winkel * 10) / 10)}">
       <span>°</span></div>`).join('')}</div>
-    ${raum.waende.length ? '<p class="hinweis">Feld antippen, messen, Enter: das nächste Feld ist dran. Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend). Buchstabe antippen für Türen, Fenster, Löschen.</p>' : ''}
+    ${raum.waende.length ? '<p class="hinweis">Feld antippen, messen, Enter: das nächste Feld ist dran. Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend); schräge Ecken rechnet die App aus, sobald alle Wände gemessen sind (grün). Buchstabe antippen für Türen, Fenster, Löschen.</p>' : ''}
     <label>Notiz<textarea id="notiz" rows="2">${esc(raum.notiz)}</textarea></label>`;
   $('#notiz').onchange = ev => { raum.notiz = ev.target.value; speichern(b); };
   app.querySelectorAll('button[data-wand]').forEach(k => { k.onclick = () => wandDialog(+k.dataset.wand, 0.5); });
@@ -199,7 +199,7 @@ function uebernehmen(f) {
   if (!ok) return false;
   if (f.dataset.feld === 'hoehe') raum.hoehe = v;
   else if (f.dataset.feld === 'l') { raum.waende[f.dataset.i].laenge = v; f.classList.toggle('leer', v == null); }
-  else raum.waende[f.dataset.i].winkel = v;
+  else raum.waende[f.dataset.i].winkel = raum.waende[f.dataset.i].skizzeWinkel = v; // neuer Ausgangswert
   if (v != null) f.value = feldText(v);
   speichern(b);
   zeichnenNeu();
@@ -334,6 +334,14 @@ function zeichnenNeu() {
     return;
   }
 
+  // Sind alle Wände gemessen, rechnet die App die schrägen Ecken passend aus (normale Ecken bleiben 90°)
+  const auto = G.winkelAusrechnen(raum.waende);
+  app.querySelectorAll('input[data-feld="w"]').forEach(f => {
+    const i = +f.dataset.i, ist = auto?.frei.includes(i);
+    f.classList.toggle('auto', !!ist);
+    if (ist && document.activeElement !== f) f.value = feldText(Math.round(raum.waende[i].winkel * 10) / 10);
+  });
+  if (auto) speichern(aktiv.b);
   const P = punkteAnzeige(), w = raum.waende, pr = G.pruefen(w);
   const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -368,6 +376,7 @@ function zeichnenNeu() {
   }
   const teile = [];
   if (pr.fehlt.length) teile.push(`Maß fehlt: ${pr.fehlt.join(', ')}`);
+  if (auto) teile.push(`Winkel ausgerechnet: ${auto.frei.map(i => `${G.name(i)} ${de(w[i].winkel, 1)}°`).join(', ')}`);
   if (Math.abs(pr.winkelSumme - pr.winkelSoll) >= 0.5) teile.push(`<span class="fehler">Winkel zusammen ${de(pr.winkelSumme, 0)}°, nötig ${pr.winkelSoll}°</span>`);
   if (!pr.fehlt.length && pr.luecke > 0.01) teile.push(`<span class="fehler">Umriss offen: Lücke ${de(pr.luecke)} m</span>`);
   if (pr.zu && !pr.fehlt.length) teile.push(`Umriss geschlossen · Fläche ${de(pr.flaeche)} m²`);
@@ -390,7 +399,7 @@ function wandDialog(i, anteil) {
   const zahlFeld = (k, v, label) => `<label><small>${label}</small><input inputmode="decimal" data-k="${k}" value="${feldText(v)}"></label>`;
   dlg.innerHTML = `<h3>Wand ${G.name(i)}</h3>
     <label class="feld">Länge (m)<input id="d-l" inputmode="decimal" value="${feldText(w.laenge)}" placeholder="≈ ${de(w.skizze ?? 1, 1)}"></label>
-    <label class="feld">Winkel am Ende (°)<input id="d-w" inputmode="decimal" value="${feldText(w.winkel)}"></label>
+    <label class="feld">Winkel am Ende (°)<input id="d-w" inputmode="decimal" value="${feldText(Math.round(w.winkel * 10) / 10)}"></label>
     <label class="feld" style="grid-template-columns:48px 1fr"><input type="checkbox" id="d-m" ${w.mitrechnen === false ? '' : 'checked'}>Wandfläche mitrechnen</label>
     <div id="d-oe">${(w.oeffnungen || []).map((o, j) => `<div class="oe" data-j="${j}">
       <select data-k="art"><option value="tuer" ${o.art === 'tuer' ? 'selected' : ''}>Tür</option><option value="fenster" ${o.art === 'fenster' ? 'selected' : ''}>Fenster</option></select>
@@ -398,7 +407,9 @@ function wandDialog(i, anteil) {
       ${zahlFeld('abstand', o.abstand, 'Abstand')}${zahlFeld('breite', o.breite, 'Breite')}${zahlFeld('hoehe', o.hoehe, 'Höhe')}${zahlFeld('bruestung', o.bruestung, 'Brüstung')}</div>`).join('')}</div>
     <p class="hinweis" style="margin:4px 0">Abstand = von der linken Ecke (vom Raum aus gesehen) bis zur Öffnung.</p>
     <div class="reihe"><button data-neu="tuer">+ Tür</button><button data-neu="fenster">+ Fenster</button></div>
-    <div class="reihe"><button id="d-ecke">Ecke hier einfügen</button><button class="weg" id="d-weg">Wand löschen</button></div>
+    <p class="hinweis" style="margin:4px 0">Wand an der angetippten Stelle teilen:</p>
+    <div class="reihe"><button id="d-ecke">Ecke</button><button id="d-vor">Vorsprung</button><button id="d-nische">Nische</button></div>
+    <div class="reihe"><button class="weg" id="d-weg">Wand löschen</button></div>
     <div class="reihe"><button class="haupt" id="d-ok">Fertig</button></div>`;
   const fertig = () => dlg.close();
   const lesen = (f, pruef) => {
@@ -407,7 +418,7 @@ function wandDialog(i, anteil) {
     return ok ? v : undefined;
   };
   dlg.querySelector('#d-l').onchange = ev => { const v = lesen(ev.target, v => v == null || v < 100); if (v !== undefined) w.laenge = v; };
-  dlg.querySelector('#d-w').onchange = ev => { const v = lesen(ev.target, v => v > 0 && v < 360); if (v !== undefined) w.winkel = v; };
+  dlg.querySelector('#d-w').onchange = ev => { const v = lesen(ev.target, v => v > 0 && v < 360); if (v !== undefined) w.winkel = w.skizzeWinkel = v; };
   dlg.querySelector('#d-m').onchange = ev => { w.mitrechnen = ev.target.checked; };
   dlg.querySelector('#d-oe').onchange = ev => {
     const o = w.oeffnungen[ev.target.closest('.oe').dataset.j], k = ev.target.dataset.k;
@@ -423,6 +434,7 @@ function wandDialog(i, anteil) {
       w.oeffnungen.push({ art: t.dataset.neu, abstand: 0.3, ...OEFFNUNG[t.dataset.neu] });
       wandDialog(i, anteil);
     } else if (t.id === 'd-ecke') { G.eckeEinfuegen(raum, i, anteil); fertig(); }
+    else if (t.id === 'd-vor' || t.id === 'd-nische') { G.vorsprungEinfuegen(raum, i, anteil, t.id === 'd-vor' ? 0.3 : -0.3); fertig(); }
     else if (t.id === 'd-weg') {
       if (!confirm(`Wand ${G.name(i)} löschen? Die anderen Wände bleiben, die Lücke wird angezeigt.`)) return;
       G.wandLoeschen(raum, i);

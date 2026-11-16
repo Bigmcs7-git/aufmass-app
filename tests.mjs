@@ -142,3 +142,49 @@ test('Abgleich PC ↔ Handy: id bleibt, Skizzenlänge aus der PC-Datei', () => {
   assert.equal(einlesen({ ...vomPc, id: undefined }, 'neu').id, 'neu'); // Datei ohne id: neue Baustelle
   assert.match(pruefeDatei({ ...vomPc, id: 5 }), /Kennung/);
 });
+
+test('Winkel ausrechnen: Trapez mit zwei schrägen Ecken', async () => {
+  const { winkelAusrechnen } = await import('./geo.js');
+  // grob gezeichnet: oben 4,2 lang, rechts schräg nach unten links
+  const { waende } = ausPunkten([[0, 0], [4.2, 0], [3.2, -3], [0, -3]]);
+  waende.forEach((w, i) => { w.laenge = [4, Math.sqrt(10), 3, 3][i]; });
+  const r = winkelAusrechnen(waende);
+  assert.deepEqual(r.frei, [0, 1]);
+  nah(waende[0].winkel, 71.565, 1e-3); nah(waende[1].winkel, 108.435, 1e-3);
+  assert.equal(waende[2].winkel, 90); assert.equal(waende[3].winkel, 90);
+  assert.ok(r.luecke < 1e-4, String(r.luecke));
+});
+
+test('Winkel ausrechnen: 45°-Ecke grob gezeichnet, drei und mehr schräge Ecken', async () => {
+  const { winkelAusrechnen } = await import('./geo.js');
+  const k = [w(3, 128), w(1.414, 142), w(2), w(4), w(3)]; // Skizze ungenau
+  const r = winkelAusrechnen(k);
+  nah(k[0].winkel, 135, 0.05); nah(k[1].winkel, 135, 0.05);
+  assert.ok(r.luecke < 1e-3);
+  // Viereck mit drei schrägen Ecken (z. B. Dachgeschoss): exakt lösbar
+  const v = [w(4, 100), w(3, 85), w(3.5, 95), w(2.8)];
+  const r2 = winkelAusrechnen(v);
+  assert.equal(r2.frei.length, 3); assert.ok(r2.luecke < 1e-4, String(r2.luecke)); // Winkel auf 0,001° gerundet
+  nah(v.reduce((s, x) => s + x.winkel, 0), 360, 1e-6);
+});
+
+test('Winkel ausrechnen: rechtwinkliger Raum bleibt bei 90°, fehlende Maße -> nichts', async () => {
+  const { winkelAusrechnen } = await import('./geo.js');
+  const r = [w(4), w(3), w(3.98), w(3)];
+  assert.equal(winkelAusrechnen(r), null);
+  assert.deepEqual(r.map(x => x.winkel), [90, 90, 90, 90]);
+  assert.equal(winkelAusrechnen([w(4, 100), w(null, 80), w(4), w(3)]), null);
+});
+
+test('Vorsprung und Nische einfügen', async () => {
+  const { vorsprungEinfuegen } = await import('./geo.js');
+  for (const tiefe of [0.3, -0.3]) {
+    const raum = { waende: [w(4), w(3), w(4), w(3)] };
+    vorsprungEinfuegen(raum, 0, 0.5, tiefe);
+    assert.equal(raum.waende.length, 8);
+    const p = pruefen(raum.waende);
+    assert.ok(p.zu, JSON.stringify(p));
+    nah(p.flaeche, 12 + (tiefe > 0 ? -1 : 1) * 0.3 * 1.2, 1e-9); // Breite 0,3 × 4 m
+    assert.deepEqual(p.fehlt, ['A', 'B', 'C', 'D', 'E']);
+  }
+});

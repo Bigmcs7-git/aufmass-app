@@ -74,7 +74,7 @@ export function ausPunkten(pts) {
 export function wandLoeschen(raum, i) {
   const w = raum.waende, n = w.length, v = (i - 1 + n) % n;
   if (i === 0) raum.drehung = (raum.drehung ?? 0) - (180 - w[0].winkel);
-  w[v].winkel = ((w[v].winkel + w[i].winkel - 180) % 360 + 360) % 360 || 360;
+  w[v].winkel = w[v].skizzeWinkel = ((w[v].winkel + w[i].winkel - 180) % 360 + 360) % 360 || 360;
   w.splice(i, 1);
 }
 
@@ -84,9 +84,75 @@ export function eckeEinfuegen(raum, i, anteil) {
   const l = w.laenge ?? w.skizze ?? 1;
   const vorn = (w.oeffnungen || []).filter(o => o.abstand < l * anteil);
   const hinten = (w.oeffnungen || []).filter(o => o.abstand >= l * anteil).map(o => ({ ...o, abstand: r3(o.abstand - l * anteil) }));
-  const a = { ...w, laenge: null, winkel: 180, skizze: Math.round(l * anteil * 100) / 100, oeffnungen: vorn };
+  const a = { ...w, laenge: null, winkel: 180, skizzeWinkel: 180, skizze: Math.round(l * anteil * 100) / 100, oeffnungen: vorn };
   const b = { ...w, laenge: null, skizze: Math.round(l * (1 - anteil) * 100) / 100, oeffnungen: hinten };
   raum.waende.splice(i, 1, a, b);
+}
+
+/** Vorsprung (tiefe > 0, ragt in den Raum, z. B. Schacht) oder Nische (tiefe < 0) in Wand i einbauen, um die
+ *  Stelle anteil (0…1) herum. Aus einer Wand werden fünf; die neuen Teile sind ungemessen (Skizzenlängen). */
+export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
+  const w = raum.waende[i], L = w.laenge ?? w.skizze ?? 1, r2 = v => Math.round(v * 100) / 100;
+  const b = L * 0.3, a = Math.min(Math.max(L * anteil - b / 2, L * 0.05), L * 0.65), c = L - a - b, t = Math.abs(tiefe);
+  const [rein, raus] = tiefe > 0 ? [90, 270] : [270, 90]; // in den Raum hinein = Rechtsknick (90°) im Uhrzeigersinn
+  const teil = (skizze, winkel, oe = []) => ({ laenge: null, winkel, skizzeWinkel: winkel, mitrechnen: w.mitrechnen, oeffnungen: oe, skizze: r2(skizze) });
+  const oe = w.oeffnungen || [];
+  const neu = [
+    teil(a, rein, oe.filter(o => o.abstand < a)),
+    teil(t, raus),
+    teil(b, raus, oe.filter(o => o.abstand >= a && o.abstand < a + b).map(o => ({ ...o, abstand: r3(o.abstand - a) }))),
+    teil(t, rein),
+    { ...teil(c, w.winkel, oe.filter(o => o.abstand >= a + b).map(o => ({ ...o, abstand: r3(o.abstand - a - b) }))), skizzeWinkel: w.skizzeWinkel ?? w.winkel },
+  ];
+  raum.waende.splice(i, 1, ...neu);
+}
+
+const gerade = v => [90, 180, 270].some(k => Math.abs(v - k) < 0.5);
+
+/** Winkel schräger Ecken aus den gemessenen Längen ausrechnen. Normale Ecken (90°, 270°, 180°) bleiben fest;
+ *  nur Ecken, die in der Skizze schräg sind, werden so verstellt, dass sich der Umriss schließt (bei mehr als drei
+ *  schrägen Ecken mit möglichst kleiner Änderung gegenüber der Skizze). Gibt null zurück, wenn nichts zu rechnen ist
+ *  (Maß fehlt oder weniger als 2 schräge Ecken), sonst {frei: [Wandnummern], luecke: verbleibende Lücke in m}. */
+export function winkelAusrechnen(waende) {
+  const n = waende.length;
+  if (n < 3 || waende.some(w => w.laenge == null)) return null;
+  waende.forEach(w => { w.skizzeWinkel ??= w.winkel; });
+  const frei = waende.map((w, i) => i).filter(i => !gerade(waende[i].skizzeWinkel));
+  const k = frei.length;
+  if (k < 2) return null;
+  const th = waende.map(w => w.skizzeWinkel);
+  const d0 = ((n - 2) * 180 - th.reduce((s, v) => s + v, 0)) / k; // Winkelsumme muss stimmen
+  frei.forEach(i => { th[i] += d0; });
+  const mitTh = () => waende.map((w, i) => ({ laenge: w.laenge, winkel: th[i] }));
+  for (let it = 0; it < 60; it++) {
+    const P = punkte(mitTh()), [ex, ey] = P[n];
+    if (Math.hypot(ex, ey) < 1e-9) break;
+    // Ableitung des Endpunkts nach dem Winkel an Ecke i: alle späteren Wände drehen sich um den Eckpunkt P[i+1]
+    const J = frei.map(i => [-(ey - P[i + 1][1]) * Math.PI / 180, (ex - P[i + 1][0]) * Math.PI / 180]);
+    const m = J.reduce((s, j) => [s[0] + j[0], s[1] + j[1]], [0, 0]).map(v => v / k);
+    const Jp = J.map(j => [j[0] - m[0], j[1] - m[1]]); // Summe der Änderungen = 0 (Winkelsumme bleibt)
+    let [a, b, c] = [0, 0, 0];
+    Jp.forEach(([x, y]) => { a += x * x; b += x * y; c += y * y; });
+    // Pseudo-Inverse der 2×2-Matrix [[a,b],[b,c]] (bei nur 2 schrägen Ecken ist sie nicht voll besetzt)
+    const sp = a + c, det = a * c - b * b, wur = Math.sqrt(Math.max(0, sp * sp / 4 - det));
+    const l1 = sp / 2 + wur, l2 = sp / 2 - wur, eps = 1e-12 * (sp + 1e-30);
+    let u = [a > eps ? ex / a : 0, c > eps ? ey / c : 0]; // schon diagonal
+    if (Math.abs(b) > eps) {
+      u = [0, 0];
+      for (const l of [l1, l2]) {
+        if (l <= eps) continue;
+        const nv = Math.hypot(l - c, b), [vx, vy] = [(l - c) / nv, b / nv], f = (vx * ex + vy * ey) / l;
+        u = [u[0] + f * vx, u[1] + f * vy];
+      }
+    }
+    let schritt = Jp.map(([x, y]) => -(x * u[0] + y * u[1]));
+    const gross = Math.max(...schritt.map(Math.abs));
+    if (gross > 15) schritt = schritt.map(v => v * 15 / gross);
+    frei.forEach((i, j) => { th[i] += schritt[j]; });
+    if (gross < 1e-10) break;
+  }
+  frei.forEach(i => { waende[i].winkel = Math.round(th[i] * 1000) / 1000; });
+  return { frei, luecke: pruefen(waende).luecke };
 }
 
 /** Eingabe vom Finger oder Laser (Tastaturmodus): "3,205", "3.205 m", "320,5 cm", "3205mm" -> Meter; leer -> null. */
@@ -111,7 +177,7 @@ export function exportieren(b, jetzt = new Date()) {
       if (r.hoehe != null) raum.hoehe = r3(r.hoehe);
       raum.waende = r.waende.map(w => ({
         laenge: w.laenge == null ? null : r3(w.laenge),
-        winkel: Math.round(w.winkel * 10) / 10,
+        winkel: Math.round(w.winkel * 100) / 100,
         mitrechnen: w.mitrechnen !== false,
         oeffnungen: (w.oeffnungen || []).map(o => ({ art: o.art, abstand: r3(o.abstand), breite: r3(o.breite),
                                                      hoehe: r3(o.hoehe), bruestung: r3(o.bruestung ?? 0) })),

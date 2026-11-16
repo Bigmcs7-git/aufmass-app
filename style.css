@@ -42,3 +42,4 @@ dialog h3 { margin: 4px 0 8px; }
 .oe select { grid-column: 1 / 4; }
 .oe small { color: var(--grau); }
 button:disabled { opacity: .4; }
+input.auto { background: #e8f8ee; border-color: #2e9d5b; font-style: italic; }
