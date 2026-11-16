@@ -79,7 +79,7 @@ const baustelle = {
 test('Export entspricht genau Abschnitt 3', () => {
   const d = exportieren(baustelle, new Date(2026, 10, 20, 14, 30));
   assert.equal(pruefeDatei(d), null);
-  assert.deepEqual(Object.keys(d), ['format', 'version', 'erstellt', 'baustelle', 'etagen']);
+  assert.deepEqual(Object.keys(d), ['format', 'version', 'erstellt', 'id', 'baustelle', 'etagen']);
   assert.equal(d.erstellt, '2026-11-20T14:30');
   const [bad, flur] = d.etagen[0].raeume;
   assert.deepEqual(Object.keys(bad), ['name', 'hoehe', 'waende', 'notiz']);
@@ -87,6 +87,8 @@ test('Export entspricht genau Abschnitt 3', () => {
   assert.deepEqual(Object.keys(bad.waende[0]), ['laenge', 'winkel', 'mitrechnen', 'oeffnungen']);
   assert.deepEqual(Object.keys(bad.waende[0].oeffnungen[0]), ['art', 'abstand', 'breite', 'hoehe', 'bruestung']);
   assert.equal(bad.waende[3].laenge, null);
+  assert.equal(bad.waende[3].skizze, 2); // ungemessen: Skizzenlänge geht mit, gemessen nicht
+  assert.equal('skizze' in bad.waende[0], false);
   assert.equal(bad.waende[3].mitrechnen, false);
   // Hin und zurück ändert nichts
   assert.deepEqual(exportieren(einlesen(d, 'y'), new Date(2026, 10, 20, 14, 30)), d);
@@ -119,4 +121,24 @@ test('Bosch GLM: Messwert aus dem Bluetooth-Rahmen lesen', async () => {
   assert.equal(boschWert(new DataView(new Uint8Array([0xc0, 0x55, 0x02, 0x01, 0x00, 0x1a]).buffer)), null); // Antwort ohne Messung
   b.setUint8(0, 0x00);
   assert.equal(boschWert(b), null);
+});
+
+test('Abgleich PC ↔ Handy: id bleibt, Skizzenlänge aus der PC-Datei', () => {
+  const vomPc = { format: 'aufmass', version: 1, erstellt: '2026-11-18T08:00', id: 'pc-123', baustelle: 'Vorbereitet am PC',
+    etagen: [{ name: 'EG', raeume: [{ name: 'Bad', waende: [
+      { laenge: null, winkel: 90, skizze: 3.2 }, { laenge: null, winkel: 90, skizze: 2.1 },
+      { laenge: null, winkel: 90, skizze: 3.2 }, { laenge: null, winkel: 90, skizze: 2.1 }] }] }] };
+  assert.equal(pruefeDatei(vomPc), null);
+  const b = einlesen(vomPc, 'neu');
+  assert.equal(b.id, 'pc-123');
+  const r = b.etagen[0].raeume[0];
+  assert.deepEqual(pruefen(r.waende).fehlt, ['A', 'B', 'C', 'D']);
+  nah(pruefen(r.waende).flaeche, 3.2 * 2.1, 1e-9); // Skizze hat die Form vom PC
+  r.waende.forEach((w, i) => { w.laenge = [3.21, 2.12, 3.21, 2.12][i]; }); // auf der Baustelle gemessen
+  const zurueck = exportieren(b);
+  assert.equal(zurueck.id, 'pc-123');
+  assert.deepEqual(zurueck.etagen[0].raeume[0].waende.map(w => w.laenge), [3.21, 2.12, 3.21, 2.12]);
+  assert.ok(zurueck.etagen[0].raeume[0].waende.every(w => !('skizze' in w)));
+  assert.equal(einlesen({ ...vomPc, id: undefined }, 'neu').id, 'neu'); // Datei ohne id: neue Baustelle
+  assert.match(pruefeDatei({ ...vomPc, id: 5 }), /Kennung/);
 });

@@ -73,6 +73,15 @@ async function einlesen(datei) {
   const fehler = G.pruefeDatei(d);
   if (fehler) return alert('Datei kann nicht gelesen werden: ' + fehler);
   const b = G.einlesen(d, crypto.randomUUID());
+  const alt = alle.find(x => x.id === b.id);
+  if (alt) {
+    // Abgleich: dieselbe Baustelle kommt vom PC oder einem anderen Gerät zurück
+    const stand = alt.geaendert ? new Date(alt.geaendert).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+    if (!confirm(`„${alt.baustelle}“ ist schon auf diesem Gerät (zuletzt geändert ${stand}).
+`
+      + `Durch die Datei vom ${d.erstellt.replace('T', ' ')} ersetzen? Änderungen hier seit dem Export gehen dabei verloren.`)) return;
+    alle = alle.filter(x => x !== alt);
+  }
   alle.push(b);
   await speichern(b);
   geh('b', b.id);

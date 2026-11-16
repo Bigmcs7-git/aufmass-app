@@ -98,12 +98,14 @@ export function zahl(text) {
   return r3(Number(m[1]) / ({ mm: 1000, cm: 100 }[(m[2] || '').toLowerCase()] || 1));
 }
 
-/** Datei nach Abschnitt 3 (Version 1): nur die vereinbarten Felder, Maße in m auf mm gerundet. */
+/** Datei nach Abschnitt 3 (Version 1), Maße in m auf mm gerundet. Zusatzfelder für den Abgleich PC ↔ Handy
+ *  (dürfen fehlen, ältere Leser übergehen sie): id = dieselbe Baustelle auf beiden Geräten,
+ *  skizze = ungefähre Wandlänge aus Zeichnung/Plan, solange laenge noch nicht gemessen ist (null). */
 export function exportieren(b, jetzt = new Date()) {
   const z = n => String(n).padStart(2, '0');
   const erstellt = `${jetzt.getFullYear()}-${z(jetzt.getMonth() + 1)}-${z(jetzt.getDate())}T${z(jetzt.getHours())}:${z(jetzt.getMinutes())}`;
   return {
-    format: 'aufmass', version: 1, erstellt, baustelle: b.baustelle,
+    format: 'aufmass', version: 1, erstellt, id: b.id, baustelle: b.baustelle,
     etagen: b.etagen.map(e => ({ name: e.name, raeume: e.raeume.map(r => {
       const raum = { name: r.name };
       if (r.hoehe != null) raum.hoehe = r3(r.hoehe);
@@ -113,6 +115,7 @@ export function exportieren(b, jetzt = new Date()) {
         mitrechnen: w.mitrechnen !== false,
         oeffnungen: (w.oeffnungen || []).map(o => ({ art: o.art, abstand: r3(o.abstand), breite: r3(o.breite),
                                                      hoehe: r3(o.hoehe), bruestung: r3(o.bruestung ?? 0) })),
+        ...(w.laenge == null && w.skizze != null ? { skizze: Math.round(w.skizze * 100) / 100 } : {}),
       }));
       raum.notiz = r.notiz || '';
       return raum;
@@ -126,6 +129,7 @@ export function pruefeDatei(d) {
   if (!d || d.format !== 'aufmass') return 'Keine Aufmaß-Datei.';
   if (d.version !== 1) return `Version ${d.version} wird nicht unterstützt.`;
   if (typeof d.baustelle !== 'string' || !Array.isArray(d.etagen)) return 'Baustelle oder Etagen fehlen.';
+  if (d.id != null && (typeof d.id !== 'string' || !d.id)) return 'Kennung (id) ungültig.';
   for (const e of d.etagen) {
     if (typeof e.name !== 'string' || !Array.isArray(e.raeume)) return 'Etage ohne Namen oder Räume.';
     for (const r of e.raeume) {
@@ -136,6 +140,7 @@ export function pruefeDatei(d) {
       for (const [i, w] of r.waende.entries()) {
         if (w.laenge !== null && !zahlOk(w.laenge)) return `${wo}, Wand ${name(i)}: Länge ungültig.`;
         if (!(typeof w.winkel === 'number' && w.winkel >= 0 && w.winkel <= 360)) return `${wo}, Wand ${name(i)}: Winkel ungültig.`;
+        if (w.skizze != null && !zahlOk(w.skizze)) return `${wo}, Wand ${name(i)}: Skizzenlänge ungültig.`;
         if (w.mitrechnen != null && typeof w.mitrechnen !== 'boolean') return `${wo}, Wand ${name(i)}: „mitrechnen“ ungültig.`;
         if (w.oeffnungen != null && !Array.isArray(w.oeffnungen)) return `${wo}, Wand ${name(i)}: Öffnungen ungültig.`;
         for (const o of w.oeffnungen || [])
@@ -147,14 +152,15 @@ export function pruefeDatei(d) {
   return null;
 }
 
-/** Geprüfte Datei -> Baustelle für die App (Skizzenlänge = Maß). */
-export function einlesen(d, id) {
+/** Geprüfte Datei -> Baustelle für die App. Hat die Datei eine id, behält die Baustelle sie (Abgleich). */
+export function einlesen(d, neueId) {
   return {
-    id, baustelle: d.baustelle,
+    id: d.id || neueId, baustelle: d.baustelle,
     etagen: d.etagen.map(e => ({ name: e.name, raeume: e.raeume.map(r => ({
       name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0,
       waende: r.waende.map(w => ({ laenge: w.laenge, winkel: w.winkel, mitrechnen: w.mitrechnen !== false,
-                                   oeffnungen: (w.oeffnungen || []).map(o => ({ ...o })), skizze: w.laenge ?? 1 })),
+                                   oeffnungen: (w.oeffnungen || []).map(o => ({ ...o })),
+                                   skizze: w.skizze ?? w.laenge ?? 1 })),
     })) })),
   };
 }
