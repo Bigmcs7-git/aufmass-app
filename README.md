@@ -20,5 +20,6 @@ Am PC ansehen: `python -m http.server 8765` in diesem Ordner, dann `http://local
 (F12 → Handy-Ansicht).
 
 ## Aufs Handy
-Die App braucht eine `https`-Adresse (wegen Offline und Bluetooth). Vorschlag: GitHub Pages, nur dieser Ordner,
+Online: **https://bigmcs7-git.github.io/aufmass-app/** (GitHub Pages aus Zweig `main`, Repo Bigmcs7-git/aufmass-app, öffentlich).
+Neue Version: committen, `git push`, vorher `STAND` in `sw.js` erhöhen. Die App braucht `https` (Offline, Bluetooth). Nur Code,
 ohne Kundendaten. Die Daten bleiben im Handy (IndexedDB) und gehen nur über „Teilen / Exportieren“ weiter.
