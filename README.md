@@ -23,3 +23,7 @@ Am PC ansehen: `python -m http.server 8765` in diesem Ordner, dann `http://local
 Online: **https://bigmcs7-git.github.io/aufmass-app/** (GitHub Pages aus Zweig `main`, Repo Bigmcs7-git/aufmass-app, öffentlich).
 Neue Version: committen, `git push`, vorher `STAND` in `sw.js` erhöhen. Die App braucht `https` (Offline, Bluetooth). Nur Code,
 ohne Kundendaten. Die Daten bleiben im Handy (IndexedDB) und gehen nur über „Teilen / Exportieren“ weiter.
+
+## Design
+Verbindlich seit 24.11.2026: `..\Konzept_Bedienung\DESIGNREGELN.md` (V4-Farben als CSS-Variablen, Ecken 6 px, Knopf-Arten,
+2er-/3er-Raster, nichts abgeschnitten). Die App ist noch im alten Blau – bei der nächsten Arbeit an der Oberfläche umstellen.
