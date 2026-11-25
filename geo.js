@@ -94,11 +94,12 @@ export function pruefen(waende, nm = name) {
 }
 
 /** Gezeichnete Punkte (y nach oben, Umriss schließt von selbst) -> {waende, drehung}, immer im Uhrzeigersinn. */
-export function ausPunkten(pts) {
+export function ausPunkten(pts, arten = []) {
   let p = pts.filter((a, i) => Math.hypot(a[0] - pts[(i + 1) % pts.length][0], a[1] - pts[(i + 1) % pts.length][1]) > 1e-6);
   let s = 0;
   p.forEach(([x1, y1], i) => { const [x2, y2] = p[(i + 1) % p.length]; s += x1 * y2 - x2 * y1; });
-  if (s > 0) p = [p[0], ...p.slice(1).reverse()]; // gegen den Uhrzeigersinn gezeichnet
+  const umgedreht = s > 0;
+  if (umgedreht) p = [p[0], ...p.slice(1).reverse()]; // gegen den Uhrzeigersinn gezeichnet
   const n = p.length;
   const richtung = i => {
     const [a, b] = [p[i % n], p[(i + 1) % n]];
@@ -108,8 +109,10 @@ export function ausPunkten(pts) {
     let links = richtung(i + 1) - richtung(i);
     links = ((links + 540) % 360) - 180; // -180 … 180, negativ = Rechtsknick
     const b = p[(i + 1) % n];
-    return { laenge: null, winkel: Math.round(180 + links), mitrechnen: true, oeffnungen: [],
-             skizze: Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) * 100) / 100 };
+    const art = arten[umgedreht ? n - 1 - i : i]; // Wandart, mit der diese Wand gezeichnet wurde
+    return { laenge: null, winkel: Math.round(180 + links), mitrechnen: art !== 'Raumgrenze', oeffnungen: [],
+             skizze: Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) * 100) / 100,
+             ...(art ? { wandart: art, dicke: WANDARTEN[art] } : {}) };
   });
   // Rundung der freien Winkel darf den Umriss nicht verdrehen: letzte Ecke gleicht aus
   const rest = (n - 2) * 180 - waende.slice(0, -1).reduce((s, w) => s + w.winkel, 0);
@@ -142,7 +145,8 @@ export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
   const w = raum.waende[i], L = wandLaenge(w) ?? w.skizze ?? 1, r2 = v => Math.round(v * 100) / 100;
   const b = L * 0.3, a = Math.min(Math.max(L * anteil - b / 2, L * 0.05), L * 0.65), c = L - a - b, t = Math.abs(tiefe);
   const [rein, raus] = tiefe > 0 ? [90, 270] : [270, 90]; // in den Raum hinein = Rechtsknick (90°) im Uhrzeigersinn
-  const teil = (skizze, winkel, oe = []) => ({ laenge: null, winkel, skizzeWinkel: winkel, mitrechnen: w.mitrechnen, oeffnungen: oe, skizze: r2(skizze) });
+  const teil = (skizze, winkel, oe = []) => ({ laenge: null, winkel, skizzeWinkel: winkel, mitrechnen: w.mitrechnen, oeffnungen: oe, skizze: r2(skizze),
+    ...(w.wandart ? { wandart: w.wandart, dicke: w.dicke } : {}) }); // Wandart bleibt
   const oe = w.oeffnungen || [];
   const neu = [
     teil(a, rein, oe.filter(o => o.abstand < a)),
@@ -154,10 +158,54 @@ export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
   raum.waende.splice(i, 1, ...neu);
 }
 
+// Wandarten wie im Grundriss-Editor am PC (geometrie.py WANDARTEN + Raumgrenze), übliche Dicke in m
+export const WANDARTEN = { 'Außenwand': 0.40, 'Tragende Wand': 0.24, 'Halbsteinwand': 0.115, 'Trockenbauwand': 0.10, 'Raumgrenze': 0 };
+
+/** Richtung (Grad) jeder Wand wie in punkte(). */
+const richtungen = (waende, drehung = 0) => { let r = drehung; return waende.map(w => { const h = r; r -= 180 - (w.winkel ?? 90); return h; }); };
+/** Innenwinkel an einer Ecke zwischen Richtung von und nach (Grad), wie winkel in punkte(). */
+const knick = (von, nach) => 180 - ((((von - nach) % 360) + 540) % 360 - 180);
+
+/** Offenen Grundriss per Knopf schließen. Reihenfolge:
+ *  1. fehlen 1–2 Längen (oder sind schon errechnet): aus dem Umriss ausrechnen (errechnet = true, grün),
+ *  2. alle gemessen, kleine Lücke (bis 10 % vom Umfang): letztes Maß anpassen (schluss = 'mass'),
+ *  3. sonst eine Schlusswand vom Ende zum Anfang einfügen (Skizzenlänge, Maß noch messen).
+ *  nurRechnen: nur Schritt 1 (nach jeder Maßänderung, damit errechnete Längen stimmen).
+ *  Rückgabe: {art: 'errechnet'|'mass'|'wand', waende} oder null (nichts zu tun). */
+export function autoSchliessen(raum, nurRechnen = false) {
+  const w = raum.waende, n = w.length;
+  if (n < 2) return null;
+  const u = richtungen(w).map(d => [Math.cos(rad(d)), Math.sin(rad(d))]);
+  const frei = w.map((x, i) => x.laenge == null || x.errechnet ? i : -1).filter(i => i >= 0);
+  let ex = 0, ey = 0;
+  w.forEach((x, i) => { if (!frei.includes(i)) { ex += wandLaenge(x) * u[i][0]; ey += wandLaenge(x) * u[i][1]; } });
+  let l = null;
+  if (frei.length === 1) l = [-(ex * u[frei[0]][0] + ey * u[frei[0]][1])];
+  if (frei.length === 2) {
+    const [j, k] = frei, det = u[j][0] * u[k][1] - u[j][1] * u[k][0];
+    if (Math.abs(det) > 1e-6) l = [(-ex * u[k][1] + ey * u[k][0]) / det, (-ey * u[j][0] + ex * u[j][1]) / det];
+  }
+  if (l && l.every(v => v > 0.01)) {
+    frei.forEach((j, z) => Object.assign(w[j], { laenge: r3(l[z]), korrektur: 0, errechnet: true }));
+    return { art: 'errechnet', waende: frei };
+  }
+  if (nurRechnen) return null;
+  const [x, y] = punkte(w).at(-1), luecke = Math.hypot(x, y);
+  if (luecke < 0.0005 || n < 2) return null;
+  const umfang = w.reduce((s, q) => s + (wandLaenge(q) ?? q.skizze ?? 1), 0);
+  if (!w.some(q => q.laenge == null) && luecke <= umfang * 0.1 && n >= 3) { raum.schluss = 'mass'; return { art: 'mass', waende: [] }; }
+  const R = richtungen(w), hNeu = Math.atan2(-y, -x) * 180 / Math.PI;
+  w[n - 1].winkel = w[n - 1].skizzeWinkel = knick(R[n - 1], hNeu);
+  const wz = knick(hNeu, 0);
+  w.push({ laenge: null, skizze: Math.round(luecke * 100) / 100, winkel: wz, skizzeWinkel: wz, mitrechnen: true, oeffnungen: [], anschluesse: [] });
+  return { art: 'wand', waende: [n] };
+}
+
 /** Neues Maß für eine Wand. Teile mit Bezug „rechts“ behalten ihren Abstand zum rechten Wandende (wie „bezug“ am PC). */
 export function laengeSetzen(w, neu) {
   const alt = wandLaenge(w) ?? w.skizze ?? 1;
   w.laenge = neu;
+  delete w.errechnet; // jetzt gemessen
   const d = (wandLaenge(w) ?? w.skizze ?? 1) - alt;
   if (Math.abs(d) < 1e-9) return;
   for (const o of w.oeffnungen || []) if (o.bezug === 'rechts') o.abstand = r3(o.abstand + d);

@@ -33,3 +33,14 @@ Wände heißen wie am PC `Raumkürzel-W<Nr>` (z. B. `WZ-W1`): Nummer 1 ist die o
 (bei gleicher Höhe die linke), dann im Uhrzeigersinn. Kürzel aus der Raumart (Wohnzimmer WZ, Bad BAD …);
 gibt es ein Kürzel mehrmals, zählt die App wie der PC (`BAD1`, `BAD2`). Beim Anlegen eines Raums wird die
 Raumart aus derselben Liste gewählt. Regeln: `geo.js` (`kuerzel`, `wandNummern`) = PC `bezeichnungen.py`.
+
+## Bedienung Skizze und Anschlüsse (25.11.2026)
+- Wand in der Skizze einmal antippen = wählen (Messing) und Stelle setzen: dort **Ecke, Vorsprung, Nische** einfügen
+  oder **Wandart** wählen. Doppelt antippen = Wandansicht öffnen.
+- **Wandarten** wie im Grundriss-Editor (`wandart`, `dicke` je Wand, PC-Feld `WAND_EXTRA`): Außenwand, Tragende Wand,
+  Halbsteinwand, Trockenbauwand (hellblau), Raumgrenze (keine Wand, keine Wandfläche). Auch beim Zeichnen wählbar.
+- **Automatisch schließen**: fehlen 1–2 Maße, rechnet die App sie aus (`errechnet`, grün, zieht bei Änderungen nach);
+  alle gemessen und kleine Lücke: letztes Maß anpassen; sonst Schlusswand einfügen.
+- Feld in Bearbeitung → Teil in der Zeichnung messingfarben.
+- Anschlüsse klappen nach dem Anlegen zu einer Zeile zusammen; `fach` (Mehrfachdose 1–5, wie Elektro am PC);
+  `leitung` = oben | unten | links | rechts (Pfeil in der Ansicht). **PC liest bisher nur oben/unten und kein `fach`.**

@@ -273,3 +273,43 @@ test('Bezeichnungen wie im Grundriss-Editor am PC (WZ-W1 …)', async () => {
   const raum = { drehung: 0, waende: [w(4), w(3), w(4), w(3)] };
   assert.deepEqual(wandBezeichnungen(raum, 'BAD'), ['BAD-W1', 'BAD-W2', 'BAD-W3', 'BAD-W4']);
 });
+
+test('Automatisch schließen: fehlende Maße ausrechnen, sonst letztes Maß oder Schlusswand', async () => {
+  const { autoSchliessen, pruefen: pr, punkte: pk } = await import('./geo.js');
+  // Rechteck, Wand C fehlt -> 4,00
+  let r = { waende: [w(4), w(3), w(null, 90, { skizze: 3.5 }), w(3)] };
+  assert.equal(autoSchliessen(r).art, 'errechnet');
+  assert.equal(r.waende[2].laenge, 4);
+  assert.ok(r.waende[2].errechnet && pr(r.waende).zu);
+  // gemessene Wand ändert sich -> errechnete Länge zieht nach
+  r.waende[0].laenge = 4.5;
+  autoSchliessen(r, true);
+  assert.equal(r.waende[2].laenge, 4.5);
+  // L-Form, zwei Maße fehlen
+  r = { waende: [w(6), w(2), w(null, 270, { skizze: 2 }), w(null, 90, { skizze: 1 }), w(3), w(4)] };
+  assert.equal(autoSchliessen(r).art, 'errechnet');
+  assert.deepEqual([r.waende[2].laenge, r.waende[3].laenge], [3, 2]);
+  assert.ok(pr(r.waende).zu);
+  // alles gemessen, kleine Lücke -> letztes Maß anpassen
+  r = { waende: [w(4), w(3), w(4.05), w(3)] };
+  assert.equal(autoSchliessen(r).art, 'mass');
+  assert.equal(r.schluss, 'mass');
+  // Wand fehlt ganz (gelöscht) -> Schlusswand mit 90°-Ecken
+  r = { waende: [w(4), w(3), w(4)] };
+  assert.equal(autoSchliessen(r).art, 'wand');
+  assert.equal(r.waende.length, 4);
+  assert.deepEqual(r.waende.map(x => x.winkel), [90, 90, 90, 90]);
+  assert.equal(r.waende[3].skizze, 3);
+  assert.ok(Math.hypot(...pk(r.waende).at(-1)) < 1e-9);
+});
+
+test('Wandart beim Zeichnen (auch gegen den Uhrzeigersinn gezeichnet)', async () => {
+  const { ausPunkten } = await import('./geo.js');
+  const im = ausPunkten([[0, 0], [4, 0], [4, -3], [0, -3]], ['Außenwand', 'Trockenbauwand', 'Raumgrenze', 'Außenwand']);
+  assert.deepEqual(im.waende.map(x => x.wandart), ['Außenwand', 'Trockenbauwand', 'Raumgrenze', 'Außenwand']);
+  assert.equal(im.waende[2].mitrechnen, false);
+  assert.equal(im.waende[1].dicke, 0.1);
+  const gg = ausPunkten([[0, 0], [0, -3], [4, -3], [4, 0]], ['A', 'B', 'C', 'D'].map((_, i) => ['Außenwand', 'Trockenbauwand', 'Raumgrenze', 'Halbsteinwand'][i]));
+  // gegen den Uhrzeigersinn: Wand 0 bleibt, dann rückwärts
+  assert.deepEqual(gg.waende.map(x => x.wandart), ['Halbsteinwand', 'Raumgrenze', 'Trockenbauwand', 'Außenwand']);
+});
