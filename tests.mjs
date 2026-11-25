@@ -260,3 +260,16 @@ test('Vom PC zurück: schon gerundete Maße bleiben gerundet (auch bei kleinerer
   assert.equal(lueckeSchliessen(r, 0.002).zustand, 'gerundet');
   assert.ok(pruefen(r.waende).zu);
 });
+
+test('Bezeichnungen wie im Grundriss-Editor am PC (WZ-W1 …)', async () => {
+  const { kuerzel, kuerzelBasis, wandNummern, wandBezeichnungen } = await import('./geo.js');
+  assert.deepEqual(['Kinderzimmer Lea', 'Hobby Raum', 'Gäste-WC', 'Duschbad', 'Bad 2', 'Xy', ''].map(kuerzelBasis),
+    ['KZ', 'HR', 'WC', 'DB', 'BAD', 'XY', 'R']);
+  assert.deepEqual(kuerzel(['Wohnzimmer', 'Flur', 'Wohnzimmer 2']), { Wohnzimmer: 'WZ1', Flur: 'FL', 'Wohnzimmer 2': 'WZ2' });
+  // Rechteck: Wand A unten nach rechts (y nach oben) -> oberste Wand C ist Nummer 1
+  assert.deepEqual(wandNummern([[0, 0], [4, 0], [4, 3], [0, 3]]), [3, 4, 1, 2]);
+  // L-Form mit zwei obersten waagrechten Wänden gleicher Höhe: die linke ist 1
+  assert.deepEqual(wandNummern([[0, 0], [0, 3], [2, 3], [2, 2], [4, 2], [4, 3], [6, 3], [6, 0]]), [8, 1, 2, 3, 4, 5, 6, 7]);
+  const raum = { drehung: 0, waende: [w(4), w(3), w(4), w(3)] };
+  assert.deepEqual(wandBezeichnungen(raum, 'BAD'), ['BAD-W1', 'BAD-W2', 'BAD-W3', 'BAD-W4']);
+});

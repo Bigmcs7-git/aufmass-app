@@ -27,3 +27,9 @@ ohne Kundendaten. Die Daten bleiben im Handy (IndexedDB) und gehen nur über „
 ## Design
 Verbindlich seit 24.11.2026: `..\Konzept_Bedienung\DESIGNREGELN.md` (V4-Farben als CSS-Variablen, Ecken 6 px, Knopf-Arten,
 2er-/3er-Raster, nichts abgeschnitten). Die App ist noch im alten Blau – bei der nächsten Arbeit an der Oberfläche umstellen.
+
+## Bezeichnungen wie im Grundriss-Editor am PC
+Wände heißen wie am PC `Raumkürzel-W<Nr>` (z. B. `WZ-W1`): Nummer 1 ist die oberste Wand der Zeichnung
+(bei gleicher Höhe die linke), dann im Uhrzeigersinn. Kürzel aus der Raumart (Wohnzimmer WZ, Bad BAD …);
+gibt es ein Kürzel mehrmals, zählt die App wie der PC (`BAD1`, `BAD2`). Beim Anlegen eines Raums wird die
+Raumart aus derselben Liste gewählt. Regeln: `geo.js` (`kuerzel`, `wandNummern`) = PC `bezeichnungen.py`.

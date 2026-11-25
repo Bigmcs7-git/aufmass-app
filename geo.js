@@ -10,6 +10,50 @@ export const wandLaenge = w => w.laenge == null ? null : w.laenge + (w.korrektur
 
 export const name = i => i < 26 ? String.fromCharCode(65 + i) : name(Math.floor(i / 26) - 1) + name(i % 26);
 
+// Bezeichnungen wie im Grundriss-Editor am PC (bezeichnungen.py): Raumkürzel-W<Nr>, z. B. WZ-W1.
+// Wand 1 = oberste Wand der Zeichnung (bei gleicher Höhe die linke), dann im Uhrzeigersinn.
+export const RAUMARTEN = { Wohnzimmer: 'WZ', Esszimmer: 'EZ', 'Küche': 'KÜ', Schlafzimmer: 'SZ', Kinderzimmer: 'KZ',
+  Arbeitszimmer: 'AZ', 'Gästezimmer': 'GZ', Bad: 'BAD', Duschbad: 'DB', WC: 'WC', Flur: 'FL', Diele: 'DI', Treppenhaus: 'TH',
+  Abstellraum: 'AR', Hauswirtschaftsraum: 'HWR', Ankleide: 'AK', 'Büro': 'BÜ', Speisekammer: 'SK', Heizungsraum: 'HZ',
+  Keller: 'KE', Garage: 'GA', Wintergarten: 'WG' };
+const ohneNummer = n => String(n ?? '').trim().replace(/\s*\d+$/, '');
+const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function kuerzelBasis(raumname) {
+  const n = ohneNummer(raumname), kl = n.toLowerCase(), arten = Object.entries(RAUMARTEN);
+  for (const [art, k] of arten) if (kl === art.toLowerCase()) return k;
+  for (const [art, k] of [...arten].sort((a, b) => b[0].length - a[0].length)) // längste zuerst (Duschbad vor Bad)
+    if (new RegExp('(^|[^a-zäöüß])' + reEsc(art.toLowerCase())).test(kl) || kl.startsWith(art.toLowerCase())) return k;
+  const teile = n.match(/[A-Za-zÄÖÜäöüß]+/g) || [];
+  if (teile.length > 1) return teile.slice(0, 3).map(t => t[0]).join('').toUpperCase();
+  return (teile[0] ? teile[0].slice(0, 2) : 'R').toUpperCase();
+}
+
+/** Kürzel je Raumname {name: 'WZ' bzw. 'WZ1'}; gibt es ein Kürzel mehrmals, zählen die Räume in Reihenfolge. */
+export function kuerzel(namen) {
+  const basis = new Map(namen.map(n => [n, kuerzelBasis(n)])), werte = [...basis.values()], zaehler = {}, aus = {};
+  for (const n of namen) {
+    const b = basis.get(n);
+    if (werte.filter(x => x === b).length > 1) aus[n] = b + (zaehler[b] = (zaehler[b] || 0) + 1);
+    else aus[n] = b;
+  }
+  return aus;
+}
+
+/** Nummer je Wand (Wand i von p[i] nach p[i+1], y nach oben, ohne Schlusspunkt). */
+export function wandNummern(p) {
+  const n = p.length, r4 = v => Math.round(v * 1e4) / 1e4;
+  if (!n) return [];
+  const sl = i => { const [[x1, y1], [x2, y2]] = [p[i], p[(i + 1) % n]]; return [r4((y1 + y2) / 2), Math.abs(y1 - y2) < 1e-6 ? 1 : 0, -r4((x1 + x2) / 2)]; };
+  const groesser = (a, b) => a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+  let k0 = 0;
+  for (let i = 1; i < n; i++) if (groesser(sl(i), sl(k0))) k0 = i;
+  return p.map((_, i) => ((i - k0) % n + n) % n + 1);
+}
+
+/** Bezeichnungen aller Wände eines Raums, z. B. ['BAD-W2', 'BAD-W3', 'BAD-W1', …]; kz aus kuerzel(). */
+export const wandBezeichnungen = (raum, kz) => wandNummern(punkte(raum.waende, raum.drehung ?? 0).slice(0, -1)).map(nr => `${kz}-W${nr}`);
+
 /** Eckpunkte [x, y]; fehlt ein Maß, gilt die Skizzenlänge. drehung = Richtung von Wand A in Grad (nur Anzeige). */
 export function punkte(waende, drehung = 0) {
   let x = 0, y = 0, r = drehung;
@@ -35,12 +79,12 @@ export function flaeche(p) {
 }
 
 /** Zustand des Umrisses: fehlende Maße, Lücke (m) zwischen Ende der letzten Wand und Anfang von A, Winkelsumme. */
-export function pruefen(waende) {
+export function pruefen(waende, nm = name) {
   const p = punkte(waende);
   const [x, y] = p.at(-1);
   const soll = (waende.length - 2) * 180;
   const summe = waende.reduce((s, w) => s + (w.winkel ?? 90), 0);
-  const fehlt = waende.map((w, i) => w.laenge == null ? name(i) : null).filter(Boolean);
+  const fehlt = waende.map((w, i) => w.laenge == null ? nm(i) : null).filter(Boolean);
   const luecke = Math.hypot(x, y);
   return {
     fehlt, luecke, winkelSumme: summe, winkelSoll: soll,
@@ -231,10 +275,10 @@ const inPolygon = ([x, y], p) => {
 const de2 = v => v.toFixed(2).replace('.', ',');
 
 /** Was außerhalb des Arbeitsbereichs liegt: [{text, wand, ziel}] (ziel z. B. 'o-0', 'a-1', 'k-0'). */
-export function warnungen(raum) {
+export function warnungen(raum, nm = i => `Wand ${name(i)}`) {
   const aus = [], H = raum.hoehe, T = 0.005;
   raum.waende.forEach((w, i) => {
-    const L = wandLaenge(w) ?? w.skizze ?? 1, wn = `Wand ${name(i)}`;
+    const L = wandLaenge(w) ?? w.skizze ?? 1, wn = nm(i);
     (w.oeffnungen || []).forEach((o, j) => {
       const was = `${o.art === 'tuer' ? 'Tür' : 'Fenster'} ${j + 1}`;
       if (o.abstand + o.breite > L + T) aus.push({ wand: i, ziel: `o-${j}`, text: `${wn}: ${was} ragt ${de2(o.abstand + o.breite - L)} m über das Wandende hinaus.` });
