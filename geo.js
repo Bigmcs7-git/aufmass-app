@@ -139,6 +139,62 @@ export function eckeEinfuegen(raum, i, anteil) {
   raum.waende.splice(i, 1, a, b);
 }
 
+/** Außenecke: die Ecke am Ende von Wand i (zur nächsten Wand hin) nach innen ausschneiden, a entlang Wand i,
+ *  b entlang der nächsten Wand. Beide Wände werden kürzer und ungemessen, dazu zwei neue Wände.
+ *  shortcut: ist Wand i die letzte, wandert der Anfang von Wand A mit (Säulen-Lage bezieht sich darauf), selten. */
+export function eckeAusschneiden(raum, i, a, b) {
+  const W = raum.waende, j = (i + 1) % W.length, wi = W[i], wj = W[j], r2 = v => Math.round(v * 100) / 100;
+  const Li = wandLaenge(wi) ?? wi.skizze ?? 1, Lj = wandLaenge(wj) ?? wj.skizze ?? 1, al = wi.winkel ?? 90;
+  a = Math.min(a, Li * 0.9); b = Math.min(b, Lj * 0.9);
+  const art = w => (w.wandart ? { wandart: w.wandart, dicke: w.dicke } : {});
+  const neu = (w, skizze, winkel) => ({ laenge: null, winkel, skizzeWinkel: winkel, mitrechnen: w.mitrechnen, oeffnungen: [], skizze: r2(skizze), ...art(w) });
+  const kurzI = { ...wi, laenge: null, korrektur: 0, skizze: r2(Li - a),
+    oeffnungen: (wi.oeffnungen || []).filter(o => o.abstand + o.breite <= Li - a), anschluesse: (wi.anschluesse || []).filter(x => x.abstand <= Li - a) };
+  const kurzJ = { ...wj, laenge: null, korrektur: 0, skizze: r2(Lj - b),
+    oeffnungen: (wj.oeffnungen || []).filter(o => o.abstand >= b).map(o => ({ ...o, abstand: r3(o.abstand - b) })),
+    anschluesse: (wj.anschluesse || []).filter(x => x.abstand >= b).map(x => ({ ...x, abstand: r3(x.abstand - b) })) };
+  delete kurzI.errechnet; delete kurzJ.errechnet;
+  W[j] = kurzJ;
+  W.splice(i, 1, kurzI, neu(wj, b, 360 - al), neu(wi, a, al)); // Ecke nach innen: Knick zurück (360-α), dann wieder α
+}
+
+/** Offenen Raum weiterzeichnen: pts (y nach oben) = alle bisherigen Eckpunkte (Anfang A … Ende letzte Wand), dann die
+ *  neuen; der Umriss schließt zum Anfang von A. Bisherige Wände bleiben mit Maßen erhalten. false = falsch herum. */
+export function anhaengen(raum, pts, arten = []) {
+  const n = raum.waende.length;
+  let s = 0;
+  pts.forEach(([x1, y1], k) => { const [x2, y2] = pts[(k + 1) % pts.length]; s += x1 * y2 - x2 * y1; });
+  if (s > 0) return false; // gegen den Uhrzeigersinn: die alten Wände laufen andersherum
+  const neu = ausPunkten(pts, [...Array(n).fill(undefined), ...arten]).waende;
+  const W = [...raum.waende, ...neu.slice(n)];
+  W[n - 1] = { ...W[n - 1], winkel: neu[n - 1].winkel, skizzeWinkel: neu[n - 1].winkel };
+  W.at(-1).winkel = W.at(-1).skizzeWinkel = (W.length - 2) * 180 - W.slice(0, -1).reduce((t, w) => t + w.winkel, 0);
+  raum.waende = W;
+  return true;
+}
+
+/** Lage der Räume einer Etage wie am PC (etagen.py): lage = [x, y] = linke untere Ecke des gedrehten Umrisses,
+ *  y nach oben. Räume ohne Lage stehen der Reihe nach rechts daneben. -> [{raum, P (Eckpunkte, y nach oben)}] */
+export function hausLage(raeume) {
+  const aus = [], ohne = [];
+  let rechts = 0;
+  for (const raum of raeume) {
+    if (!raum.waende?.length) continue;
+    const p = punkte(raum.waende, raum.drehung ?? 0), q = p.slice(0, -1);
+    const x0 = Math.min(...q.map(v => v[0])), y0 = Math.min(...q.map(v => v[1]));
+    const eintrag = { raum, p, x0, y0 };
+    if (raum.lage) { eintrag.ox = raum.lage[0] - x0; eintrag.oy = raum.lage[1] - y0; rechts = Math.max(rechts, raum.lage[0] + Math.max(...q.map(v => v[0])) - x0); }
+    else ohne.push(eintrag);
+    aus.push(eintrag);
+  }
+  for (const t of ohne) { // der Reihe nach, 1 m Abstand
+    const q = t.p.slice(0, -1), x = rechts + (aus.some(v => v.raum.lage) || ohne[0] !== t ? 1 : 0);
+    t.ox = x - t.x0; t.oy = -t.y0;
+    rechts = x + Math.max(...q.map(v => v[0])) - t.x0;
+  }
+  return aus.map(t => ({ raum: t.raum, ox: t.ox, oy: t.oy, P: t.p.map(([x, y]) => [x + t.ox, y + t.oy]) }));
+}
+
 /** Vorsprung (tiefe > 0, ragt in den Raum, z. B. Schacht) oder Nische (tiefe < 0) in Wand i einbauen, um die
  *  Stelle anteil (0…1) herum. Aus einer Wand werden fünf; die neuen Teile sind ungemessen (Skizzenlängen). */
 export function vorsprungEinfuegen(raum, i, anteil, tiefe) {
@@ -416,6 +472,7 @@ export function exportieren(b, jetzt = new Date()) {
       }));
       raum.notiz = r.notiz || '';
       if (r.koerper?.length) raum.koerper = r.koerper.map(k => koerperExport(k, r.waende));
+      if (r.lage) raum.drehung = Math.round((r.drehung ?? 0) * 100) / 100; // Lage im Haus wie am PC: lage + drehung
       return Object.assign(raum, rest(r, 'raum'));
     }), ...rest(e, 'etage') })),
     ...rest(b, 'baustelle'),
@@ -474,7 +531,7 @@ export function einlesen(d, neueId) {
       const koerper = (r.koerper || []).map(k => koerperImport(k, waende));
       // schon gerundete Maße (gemessen ≠ laenge): diese Entscheidung bleibt, auch wenn die Toleranz hier kleiner ist
       const schluss = r.schluss ?? (r.waende.some(w => w.gemessen != null) ? 'mass' : undefined);
-      return { ...rest(r, 'raum'), ...(schluss ? { schluss } : {}), name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: 0, waende, koerper };
+      return { ...rest(r, 'raum'), ...(schluss ? { schluss } : {}), name: r.name, hoehe: r.hoehe ?? null, notiz: r.notiz || '', drehung: r.lage ? r.drehung ?? 0 : 0, waende, koerper };
     }) })),
   };
 }

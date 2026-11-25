@@ -313,3 +313,42 @@ test('Wandart beim Zeichnen (auch gegen den Uhrzeigersinn gezeichnet)', async ()
   // gegen den Uhrzeigersinn: Wand 0 bleibt, dann rückwärts
   assert.deepEqual(gg.waende.map(x => x.wandart), ['Halbsteinwand', 'Raumgrenze', 'Trockenbauwand', 'Außenwand']);
 });
+
+test('Außenecke: Ecke zwischen zwei Nachbarwänden nach innen, Umriss bleibt zu', async () => {
+  const { eckeAusschneiden } = await import('./geo.js');
+  const raum = { waende: [w(4), w(3), w(4), w(3)] };
+  eckeAusschneiden(raum, 0, 1, 0.5); // Ecke zwischen A und B: 1 m entlang A, 0,5 m entlang B
+  const W = raum.waende.map(x => ({ ...x, laenge: x.laenge ?? x.skizze }));
+  assert.deepEqual(W.map(x => x.laenge), [3, 0.5, 1, 2.5, 4, 3]);
+  assert.deepEqual(W.map(x => x.winkel), [90, 270, 90, 90, 90, 90]);
+  const r = pruefen(W);
+  assert.ok(r.zu); nah(r.flaeche, 12 - 0.5);
+  const r2 = { waende: [w(4), w(3), w(4), w(3)] };
+  eckeAusschneiden(r2, 3, 0.5, 0.5); // letzte und erste Wand
+  assert.ok(pruefen(r2.waende.map(x => ({ ...x, laenge: x.laenge ?? x.skizze }))).zu);
+});
+
+test('Wand löschen und weiterzeichnen: alte Maße bleiben, Umriss schließt', async () => {
+  const { anhaengen } = await import('./geo.js');
+  const raum = { waende: [w(4), w(3), w(4), w(3)], drehung: 0 };
+  wandLoeschen(raum, 3); // offen: Lücke zwischen Ende von C und Anfang von A
+  const p = punkte(raum.waende, 0); // 4 Punkte
+  assert.ok(anhaengen(raum, [...p, [0, -1.5]])); // zwei neue Wände statt einer
+  assert.equal(raum.waende.length, 5);
+  assert.deepEqual(raum.waende.slice(0, 3).map(x => x.laenge), [4, 3, 4]);
+  const W = raum.waende.map(x => ({ ...x, laenge: x.laenge ?? x.skizze }));
+  assert.ok(pruefen(W).zu, JSON.stringify(W.map(x => [x.laenge, x.winkel])));
+  assert.equal(anhaengen({ waende: [w(3), w(4)] }, [[0, 0], [0, -3], [4, -3], [4, 0]]), false); // gegen den Uhrzeigersinn
+});
+
+test('Hausgrundriss: Lage wie am PC (linke untere Ecke), ohne Lage der Reihe nach', async () => {
+  const { hausLage } = await import('./geo.js');
+  const a = { waende: [w(4), w(3), w(4), w(3)], drehung: 0, lage: [10, 20] }, b = { waende: [w(2), w(2), w(2), w(2)], drehung: 0 };
+  const h = hausLage([a, b, { waende: [] }]);
+  assert.equal(h.length, 2);
+  assert.deepEqual(h[0].P.slice(0, -1).map(p => p.map(v => Math.round(v * 1000) / 1000)), [[10, 23], [14, 23], [14, 20], [10, 20]]);
+  nah(Math.min(...h[1].P.map(p => p[0])), 15); // rechts daneben, 1 m Abstand
+  const d = einlesen(exportieren({ id: 'x', baustelle: 'B', etagen: [{ name: 'EG', raeume: [{ ...a, name: 'WZ', hoehe: null, notiz: '', drehung: 90, koerper: [] }] }] }));
+  assert.deepEqual(d.etagen[0].raeume[0].lage, [10, 20]);
+  assert.equal(d.etagen[0].raeume[0].drehung, 90);
+});

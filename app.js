@@ -47,13 +47,14 @@ function zeigen() {
   app.onchange = app.onclick = null;
   if (art === 'w' && b?.etagen[e]?.raeume[r]?.waende[i]) wandSeite(b, +e, +r, +i, anteil ? +anteil : null, sel || null);
   else if (art === 'r' && b?.etagen[e]?.raeume[r]) raumSeite(b, +e, +r);
+  else if (art === 'h' && b?.etagen[e]) hausSeite(b, +e);
   else if (art === 'b' && b) baustelleSeite(b);
   else startSeite();
 }
 addEventListener('hashchange', () => { scrollTo(0, 0); zeigen(); }); // erst nach oben, dann darf die Seite ein Feld zeigen
 $('#zurueck').onclick = () => {
   const [art, id, e, r] = ort();
-  art === 'w' ? geh('r', id, e, r) : art === 'r' ? geh('b', id) : geh('');
+  art === 'w' ? geh('r', id, e, r) : art === 'r' || art === 'h' ? geh('b', id) : geh('');
 };
 const kopf = (titel, zurueck = true) => { $('#titel').textContent = titel; $('#zurueck').style.visibility = zurueck ? '' : 'hidden'; };
 const frage = (text, vorgabe = '') => { const t = prompt(text, vorgabe); return t == null ? null : t.trim() || null; };
@@ -126,7 +127,7 @@ function baustelleSeite(b) {
         <a href="#r/${encodeURIComponent(b.id)}/${ei}/${ri}">${esc(r.name)}&nbsp;<span class="hinweis">· ${raumInfo(b, r)}</span></a>
         <button class="klein" data-a="raum-name" data-e="${ei}" data-r="${ri}" aria-label="Raum umbenennen">✎</button>
         <button class="klein weg" data-a="raum-weg" data-e="${ei}" data-r="${ri}" aria-label="Raum löschen">🗑</button></li>`).join('')}</ul>
-      <div class="reihe"><button data-a="raum-neu" data-e="${ei}">+ Raum</button></div>
+      <div class="reihe"><button data-a="raum-neu" data-e="${ei}">+ Raum</button>${e.raeume.some(q => q.waende.length) ? `<a class="knopf" href="#h/${encodeURIComponent(b.id)}/${ei}">Hausgrundriss / Räume anordnen</a>` : ''}</div>
     </section>`).join('') + `
     <div class="reihe"><button data-a="etage-neu">+ Etage</button></div>
     <label class="feld" style="grid-template-columns:1fr 170px">Toleranz: kleine Lücken selbst schließen
@@ -286,6 +287,7 @@ function markieren(t) {
 function raumSeite(b, e, r) {
   const raum = b.etagen[e].raeume[r];
   aktiv = { b, raum, e, r };
+  zoomKey(`r/${b.id}/${e}/${r}`);
   raum.koerper ??= [];
   kopf(`${b.etagen[e].name} · ${raum.name}`);
   if (!raum.waende.length) zeichnen = { pkt: [], zug: null, arten: [], art: '' };
@@ -302,7 +304,7 @@ function raumSeite(b, e, r) {
              placeholder="≈ ${massText(w.skizze ?? 1)}" value="${massText(w.laenge)}" class="${w.laenge == null ? 'leer' : w.errechnet ? 'auto' : ''}">
       <span>${einheit}</span>
       <input data-feld="w" data-i="${i}" inputmode="decimal" tabindex="-1" aria-label="Winkel Ecke nach ${WB[i]}" value="${rohText(w.winkel)}">
-      <span>°</span><small class="ger" id="ger-${i}"></small></div>`).join('')}</div>
+      <span>°</span><button class="klein ent" data-wweg="${i}" aria-label="Wand ${WB[i]} löschen">✕</button><small class="ger" id="ger-${i}"></small></div>`).join('')}</div>
     ${raum.waende.length ? `<p class="hinweis">Maß in der Zeichnung oder Feld antippen, messen, Enter: das nächste Feld ist dran.
       Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend); schräge Ecken rechnet die App aus, sobald alle Wände gemessen sind (grün).
       Wand in der Zeichnung antippen = wählen (Ecke, Vorsprung, Nische, Wandart an der angetippten Stelle);
@@ -322,6 +324,7 @@ function raumSeite(b, e, r) {
     <label>Notiz<textarea id="notiz" rows="2">${esc(raum.notiz)}</textarea></label>`;
   $('#notiz').onchange = ev => { raum.notiz = ev.target.value; speichern(b); };
   app.querySelectorAll('button[data-wand]').forEach(k => { k.onclick = () => geh('w', b.id, e, r, k.dataset.wand); });
+  app.querySelectorAll('button[data-wweg]').forEach(k => { k.onclick = () => wandWeg(+k.dataset.wweg); });
   if (raum.waende.length) {
     $('#r-waende').onclick = () => geh('w', b.id, e, r, 0);
     $('#r-saeule').onclick = () => { raum.koerper.push({ form: 'rechteck', s: 0.5, a: 0.5, b: 0.3, t: 0.3, h: null }); speichern(b); raumSeite(b, e, r); };
@@ -364,6 +367,66 @@ function raumSeite(b, e, r) {
   };
   skizzeEinrichten();
   zeichnenNeu();
+}
+
+/** Hausgrundriss einer Etage: Räume verschieben (rasten an anderen Räumen ein) und drehen. */
+function hausSeite(b, e) {
+  const et = b.etagen[e];
+  kopf(`${et.name} · Hausgrundriss`);
+  zoomKey(`h/${b.id}/${e}`);
+  aktiv = { b, e, raum: null };
+  G.hausLage(et.raeume).forEach(t => { if (!t.raum.lage) { const [x0, y0] = kasten(t.P.slice(0, -1)); t.raum.lage = [r3(x0), r3(y0)]; } }); // jetzige Stelle festhalten
+  speichern(b);
+  let wahl = null, tipp2 = { i: -1, t: 0 };
+  app.innerHTML = `<svg id="skizze" xmlns="http://www.w3.org/2000/svg"></svg><div class="reihe" id="hk"></div>
+    <p class="hinweis">Raum antippen = wählen; mit dem Finger verschieben, er rastet an den anderen Räumen ein (Wanddicke dazwischen).
+      Doppelt antippen = Raum öffnen. Zwei Finger = zoomen. Neue Räume zeichnet man im Raum direkt neben die anderen.</p>`;
+  const s = svg();
+  const zeichne = () => {
+    const liste = G.hausLage(et.raeume), alle = liste.flatMap(t => anzeige(t.P));
+    if (!s._basis) { const [x0, y0, x1, y1] = kasten(alle), rd = Math.max(x1 - x0, y1 - y0, 2) * 0.1; sicht(s, [x0 - rd, y0 - rd, x1 - x0 + 2 * rd, y1 - y0 + 2 * rd]); }
+    const fs = Math.max(s._basis[2], s._basis[3]) / 40;
+    s.replaceChildren();
+    liste.forEach(({ raum, P }) => {
+      const A = anzeige(P), ri = et.raeume.indexOf(raum), [x0, y0, x1, y1] = kasten(A), an = ri === wahl;
+      s.append(el('polygon', { points: A.slice(0, -1).join(' '), fill: an ? '#ead9bb' : '#f4ead9', stroke: an ? '#a77f45' : '#5c554a', 'stroke-width': fs * (an ? 0.35 : 0.2), 'data-ri': ri, style: 'cursor:move' }));
+      s.append(el('text', { x: (x0 + x1) / 2, y: (y0 + y1) / 2, 'font-size': Math.min(fs * 1.2, (x1 - x0) / Math.max(3, raum.name.length) * 1.6), 'text-anchor': 'middle', fill: '#17140f', 'pointer-events': 'none' }, raum.name));
+    });
+    zoomAnwenden(s);
+    $('#hk').innerHTML = wahl == null ? '<div class="wahl">Raum antippen, um ihn zu wählen.</div>'
+      : `<div class="wahl"><b>${esc(et.raeume[wahl].name)}</b> gewählt</div><button id="h-dreh">⟳ 90° drehen</button><button class="haupt zwei" id="h-auf">Raum öffnen ›</button>`;
+    if (wahl != null) {
+      $('#h-dreh').onclick = () => { const q = et.raeume[wahl]; q.drehung = ((q.drehung ?? 0) - 90) % 360; speichern(b); zeichne(); };
+      $('#h-auf').onclick = () => geh('r', b.id, e, wahl);
+    }
+  };
+  const einrasten2 = (raum, lage) => { // Kanten auf Kanten der anderen Räume, mit oder ohne Wanddicke dazwischen
+    const P = G.punkte(raum.waende, raum.drehung ?? 0).slice(0, -1), [x0, y0] = kasten(P);
+    const eig = P.map(([x, y]) => [x - x0 + lage[0], y - y0 + lage[1]]);
+    const andere = G.hausLage(et.raeume).filter(t => t.raum !== raum).flatMap(t => t.P);
+    const dk = Math.max(0, ...raum.waende.map(w => w.dicke || 0)) || 0.115;
+    const best = k => { let m = null;
+      for (const p of eig) for (const q of andere) for (const off of [0, dk, -dk]) { const dv = q[k] + off - p[k]; if (Math.abs(dv) < 0.2 && (m == null || Math.abs(dv) < Math.abs(m))) m = dv; }
+      return m ?? 0; };
+    return [r3(lage[0] + best(0)), r3(lage[1] + best(1))];
+  };
+  gesten(s, { greifen: ziel => {
+    if (ziel.dataset?.ri == null) return null;
+    const raum = et.raeume[+ziel.dataset.ri], l0 = [...raum.lage];
+    wahl = +ziel.dataset.ri;
+    return { zieh: (dx, dy) => { raum.lage = einrasten2(raum, [l0[0] + dx, l0[1] - dy]); zeichne(); }, los: () => speichern(b) };
+  } });
+  s.onclick = ev => {
+    if (!angetippt(s) || zoomKnopf(s, ev, zeichne)) return;
+    const ri = ev.target.dataset?.ri;
+    if (ri == null) { wahl = null; return zeichne(); }
+    const jetzt = Date.now();
+    if (tipp2.i === +ri && jetzt - tipp2.t < 450) return geh('r', b.id, e, ri);
+    tipp2 = { i: +ri, t: jetzt };
+    wahl = +ri;
+    zeichne();
+  };
+  zeichne();
 }
 
 /** Feld lesen und in den Raum schreiben. false = ungültige Eingabe (Feld bleibt rot). */
@@ -409,6 +472,95 @@ function svgPunkt(ev, s = svg()) {
   return [q.x, q.y];
 }
 
+// ---------- Zoomen und Verschieben (zwei Finger, Mausrad, Knöpfe in der Zeichnung) ----------
+let zoomZ = { key: '', f: 1, dx: 0, dy: 0 };
+const zoomKey = k => { if (zoomZ.key !== k) zoomZ = { key: k, f: 1, dx: 0, dy: 0 }; };
+const zoomGrenze = f => Math.min(12, Math.max(0.2, f));
+/** Grundausschnitt [x, y, w, h] setzen; Zoom und Verschiebung kommen dazu, Knöpfe oben rechts. */
+function sicht(s, box, knoepfe = {}) { s._basis = box; s._knoepfe = knoepfe; zoomAnwenden(s); }
+function zoomAnwenden(s) {
+  const [x, y, w, h] = s._basis, W = w / zoomZ.f, H = h / zoomZ.f, cx = x + w / 2 + zoomZ.dx, cy = y + h / 2 + zoomZ.dy;
+  s.setAttribute('viewBox', `${cx - W / 2} ${cy - H / 2} ${W} ${H}`);
+  s.querySelector('#zk')?.remove();
+  const cw = s.clientWidth || 300, ch = s.clientHeight || 300, u = Math.max(W / cw, H / ch); // m je Bildschirmpunkt
+  const g = el('g', { id: 'zk' }), k = 38 * u, rechts = cx + cw * u / 2 - 6 * u, oben = cy - ch * u / 2 + 6 * u;
+  const knopf = (x0, y0, b, text, z) => {
+    g.append(el('rect', { x: x0, y: y0, width: b, height: k, rx: 6 * u, fill: '#fbfaf7', stroke: '#cfc7b7', 'stroke-width': u, 'data-zoom': z, opacity: 0.92 }));
+    g.append(el('text', { x: x0 + b / 2, y: y0 + k * 0.68, 'font-size': 17 * u, 'text-anchor': 'middle', fill: '#17140f', 'data-zoom': z, 'font-weight': 600 }, text));
+  };
+  [['+', '+'], ['−', '-'], ['⤢', '0'], ...(s._knoepfe.haus ? [['⌂', 'haus']] : [])].forEach(([t, z], n) => knopf(rechts - k, oben + n * (k + 4 * u), k, t, z));
+  if (s._knoepfe.bau != null) knopf(cx - cw * u / 2 + 6 * u, oben, 128 * u, s._knoepfe.bau ? 'Skizze' : 'Bauzeichnung', 'bau');
+  s.append(g);
+  queueMicrotask(() => { if (g.isConnected) s.append(g); }); // Knöpfe über allem, was danach gezeichnet wird
+}
+/** Knopf in der Zeichnung angetippt? true = erledigt. */
+function zoomKnopf(s, ev, neu) {
+  const z = ev.target.dataset?.zoom;
+  if (!z) return false;
+  if (z === '+' || z === '-') zoomZ.f = zoomGrenze(zoomZ.f * (z === '+' ? 1.4 : 1 / 1.4));
+  else if (z === '0') Object.assign(zoomZ, { f: 1, dx: 0, dy: 0 });
+  else if (z === 'haus') { const [x, y, w, h] = s._basis, [hx, hy, hw, hh] = s._knoepfe.haus;
+    Object.assign(zoomZ, { f: zoomGrenze(Math.min(w / hw, h / hh)), dx: hx + hw / 2 - x - w / 2, dy: hy + hh / 2 - y - h / 2 }); }
+  else if (z === 'bau') { bauAnsicht = !bauAnsicht; merken('bau', bauAnsicht ? '1' : ''); return neu(), true; }
+  zoomAnwenden(s);
+  return true;
+}
+/** Finger-Gesten: ein Finger schiebt (oder zieht, was greifen() liefert), zwei Finger zoomen, lange drücken = lang(). */
+function gesten(s, o = {}) {
+  const f = new Map();
+  let g = null;
+  s.addEventListener('pointerdown', ev => {
+    s._klickWeg = false;
+    if (o.aus?.()) return;
+    f.set(ev.pointerId, [ev.clientX, ev.clientY]);
+    if (f.size === 2) { clearTimeout(g?.lt); const [a, b] = [...f.values()]; g = { pinch: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, f0: zoomZ.f, bewegt: true }; return; }
+    const vb = s.viewBox.baseVal, ziel = ev.target;
+    g = { x: ev.clientX, y: ev.clientY, dx0: zoomZ.dx, dy0: zoomZ.dy, u: Math.max(vb.width / s.clientWidth, vb.height / s.clientHeight), bewegt: false,
+          zug: ziel.dataset?.zoom ? null : o.greifen?.(ziel) || null };
+    if (o.lang) g.lt = setTimeout(() => { if (g && !g.bewegt) { g.lang = true; navigator.vibrate?.(30); o.lang(ziel, ev); } }, 550);
+  });
+  s.addEventListener('pointermove', ev => {
+    if (!g || !f.has(ev.pointerId)) return;
+    f.set(ev.pointerId, [ev.clientX, ev.clientY]);
+    if (g.pinch) { const [a, b] = [...f.values()]; zoomZ.f = zoomGrenze(g.f0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / g.pinch); return zoomAnwenden(s); }
+    const dx = ev.clientX - g.x, dy = ev.clientY - g.y;
+    if (!g.bewegt && Math.hypot(dx, dy) < 8) return;
+    g.bewegt = true; clearTimeout(g.lt);
+    if (g.zug) return g.zug.zieh(dx * g.u, dy * g.u);
+    zoomZ.dx = g.dx0 - dx * g.u; zoomZ.dy = g.dy0 - dy * g.u;
+    zoomAnwenden(s);
+  });
+  const ende = ev => {
+    f.delete(ev.pointerId);
+    if (!g) return;
+    clearTimeout(g.lt);
+    if (g.bewegt || g.lang) s._klickWeg = true; // kein Antippen nach Schieben oder langem Drücken
+    if (g.bewegt) g.zug?.los?.();
+    if (g.pinch || !f.size) g = null;
+  };
+  s.addEventListener('pointerup', ende);
+  s.addEventListener('pointercancel', ende);
+  s.addEventListener('wheel', ev => { if (o.aus?.()) return; ev.preventDefault(); zoomZ.f = zoomGrenze(zoomZ.f * (ev.deltaY < 0 ? 1.2 : 1 / 1.2)); zoomAnwenden(s); }, { passive: false });
+}
+const angetippt = s => { if (!s._klickWeg) return true; s._klickWeg = false; return false; };
+
+// ---------- Hausgrundriss: alle Räume der Etage, Raum in Bearbeitung hervorgehoben ----------
+const ROT = '#c62828'; // Wand in Bearbeitung (Pauls Wunsch: rot)
+let bauAnsicht = (() => { try { return localStorage.getItem('bau') === '1'; } catch { return false; } })();
+const haus = (b, e) => G.hausLage(b.etagen[e].raeume);
+const anzeige = P => P.map(([x, y]) => [x, -y]);
+const kasten = pts => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+/** Andere Räume grau zeichnen (blass = es wird gerade eine Wand bearbeitet). Antippen öffnet den Raum. */
+function andereRaeume(s, liste, raum, fs, blass) {
+  liste.forEach(({ raum: q, P }) => {
+    if (q === raum) return;
+    const A = anzeige(P);
+    s.append(el('polygon', { points: A.slice(0, -1).join(' '), fill: '#ece8e0', stroke: '#b9b1a3', 'stroke-width': fs * 0.12, opacity: blass ? 0.45 : 0.9, 'data-raum': q.name }));
+    const [x0, y0, x1, y1] = kasten(A);
+    s.append(el('text', { x: (x0 + x1) / 2, y: (y0 + y1) / 2, 'font-size': fs * 0.8, 'text-anchor': 'middle', fill: '#9a9284', opacity: blass ? 0.5 : 1, 'pointer-events': 'none' }, q.name));
+  });
+}
+
 const RASTER_WINKEL = 10; // Grad: so nah an 45/90° rastet die Wand ein
 function einrasten(p) {
   const pk = zeichnen.pkt, a = pk.at(-1);
@@ -442,22 +594,32 @@ function skizzeEinrichten() {
     zeichnen.arten.push(zeichnen.art);
     zeichnenNeu();
   };
+  const stelle = (ev, i) => { // angetippte Stelle 0…1 auf Wand i
+    const [x, y] = svgPunkt(ev), P = punkteAnzeige(), [a, c] = [P[i], P[i + 1]], dx = c[0] - a[0], dy = c[1] - a[1];
+    return Math.min(0.9, Math.max(0.1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+  };
+  gesten(s, { aus: () => !!zeichnen, lang: (ziel, ev) => { // lange drücken: Wand wählen (mit „Wand löschen“)
+    if (ziel.dataset?.i == null) return;
+    gewaehlt = { i: +ziel.dataset.i, anteil: stelle(ev, +ziel.dataset.i) };
+    zeichnenNeu();
+  } });
   s.onclick = ev => {
-    if (zeichnen) return;
+    if (zeichnen || !angetippt(s) || zoomKnopf(s, ev, zeichnenNeu)) return;
     const d = ev.target.dataset || {}, { b, e, r } = aktiv;
+    if (d.raum != null) { const ri = b.etagen[e].raeume.findIndex(q => q.name === d.raum); if (ri >= 0) return geh('r', b.id, e, ri); }
     if (d.mass != null) { // Maß in der Zeichnung antippen: Feld ist bereit für den Laser
       gewaehlt = { i: +d.mass, anteil: 0.5 };
       return zeig(app.querySelector(`input[data-feld="l"][data-i="${d.mass}"]`));
     }
     if (d.teil) { const [i, sel] = d.teil.split(':'); return geh('w', b.id, e, r, i, '', sel); }
     if (d.i == null) { gewaehlt = null; return zeichnenNeu(); } // daneben getippt: Auswahl weg
-    const i = +d.i, [x, y] = svgPunkt(ev), P = punkteAnzeige(), [a, c] = [P[i], P[i + 1]];
-    const dx = c[0] - a[0], dy = c[1] - a[1];
-    const t = Math.min(0.9, Math.max(0.1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    const i = +d.i, t = stelle(ev, i), n = aktiv.raum.waende.length;
     const jetzt = Date.now(), doppelt = tipp.i === i && jetzt - tipp.t < 450;
     tipp = { i, t: jetzt };
-    if (doppelt) return geh('w', b.id, e, r, i, (gewaehlt?.anteil ?? t).toFixed(2));
-    gewaehlt = { i, anteil: t }; // erster Tipp wählt die Wand und die Stelle
+    if (doppelt) return geh('w', b.id, e, r, i, (gewaehlt?.i === i ? gewaehlt.anteil : t).toFixed(2));
+    const g = gewaehlt;
+    if (g && g.j == null && g.i !== i && ((g.i + 1) % n === i || (i + 1) % n === g.i)) g.j = i; // Nachbarwand dazu: Ecke dazwischen
+    else gewaehlt = { i, anteil: t }; // erster Tipp wählt die Wand und die Stelle
     zeichnenNeu();
   };
 }
@@ -465,28 +627,154 @@ function skizzeEinrichten() {
 function schliessen() {
   const pk = zeichnen.pkt;
   if (pk.length < 3) return alert('Ein Raum braucht mindestens 3 Wände.');
-  const { b, raum } = aktiv;
-  Object.assign(raum, G.ausPunkten(pk.map(([x, y]) => [x, -y]), [...zeichnen.arten, zeichnen.art]));
+  const { b, raum } = aktiv, pts = pk.map(([x, y]) => [x, -y]), arten = [...zeichnen.arten, zeichnen.art];
+  if (zeichnen.fest) { if (!G.anhaengen(raum, pts, arten)) return alert('Bitte in derselben Richtung weiterzeichnen wie die bestehenden Wände (bis zum grünen Anfang).'); }
+  else Object.assign(raum, G.ausPunkten(pts, arten));
+  const [x0, y0] = kasten(pts);
+  raum.lage = [Math.round(x0 * 1000) / 1000, Math.round(y0 * 1000) / 1000]; // da, wo gezeichnet wurde (wie am PC)
   zeichnen = null;
   speichern(b);
   zeigen();
 }
 
-const punkteAnzeige = (raum = aktiv.raum) => G.punkte(raum.waende, raum.drehung ?? 0).map(([x, y]) => [x, -y]);
+/** Eckpunkte des Raums auf dem Bildschirm (y nach unten), in Hauskoordinaten der Etage. */
+const punkteAnzeige = (raum = aktiv.raum) => anzeige(versatz(raum).P);
+const versatz = (raum = aktiv.raum) => haus(aktiv.b, aktiv.e).find(t => t.raum === raum) ?? { ox: 0, oy: 0, P: G.punkte(raum.waende, raum.drehung ?? 0) };
+
+// ---------- Bauzeichnung (übliche Darstellung nach DIN 1356-1 / DIN 406) ----------
+/** Maßzahl wie in Bauzeichnungen: unter 1 m in cm, sonst in m; der Millimeter hochgestellt (88⁵, 1,38⁵). */
+function din(v) {
+  const mm = Math.round(v * 1000), cm = Math.floor(mm / 10), rest = mm % 10;
+  return [mm < 1000 ? String(cm) : (cm / 100).toFixed(2).replace('.', ','), rest ? String(rest) : ''];
+}
+function dinText(x, y, v, attr, vor = '') {
+  const [h, hoch] = din(v), t = el('text', attr);
+  t.setAttribute('x', x); t.setAttribute('y', y);
+  t.append(el('tspan', {}, vor + h));
+  if (hoch) t.append(el('tspan', { dy: '-0.4em', 'font-size': '70%' }, hoch));
+  return t;
+}
+const MAUERWERK = ['Außenwand', 'Tragende Wand', 'Halbsteinwand'];
+/** Wände mit echter Dicke: Mauerwerk schräg schraffiert, Trockenbau mit Dämmstoff-Zickzack, Öffnungen ausgespart,
+ *  Türen mit Aufschlag, Fenster mit Glaslinien; innen je Wand eine Maßkette mit Schrägstrichen; Raumstempel. */
+function bauZeichnen(s, raum, P, fs, akt, akt2, pr) {
+  const w = raum.waende, n = w.length, zu = pr.luecke <= 0.01 && n >= 3, L = 0.018; // Linienstärke in m
+  const defs = el('defs', {});
+  defs.innerHTML = `<pattern id="mw" patternUnits="userSpaceOnUse" width="0.06" height="0.06" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="0.06" stroke="#17140f" stroke-width="0.008"/></pattern>`;
+  s.append(defs);
+  const U = i => { const [a, c] = [P[i], P[i + 1]], l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1; return [(c[0] - a[0]) / l, (c[1] - a[1]) / l]; };
+  const N = i => { const u = U(i); return [u[1], -u[0]]; }; // nach außen
+  const d = i => w[i].dicke || 0;
+  const Q = k => { // Außenecke am Punkt k: Schnitt der versetzten Außenkanten der Wände k-1 und k (Gehrung)
+    const hat = j => j >= 0 && j < n, vor = zu ? (k - 1 + n) % n : k - 1, nach = zu ? k % n : k;
+    if (!hat(nach)) return [P[k][0] + N(vor)[0] * d(vor), P[k][1] + N(vor)[1] * d(vor)];
+    const B = [P[k][0] + N(nach)[0] * d(nach), P[k][1] + N(nach)[1] * d(nach)];
+    if (!hat(vor)) return B;
+    const A = [P[k][0] + N(vor)[0] * d(vor), P[k][1] + N(vor)[1] * d(vor)], u1 = U(vor), u2 = U(nach), kr = u1[0] * u2[1] - u1[1] * u2[0];
+    if (Math.abs(kr) < 1e-6) return B;
+    const t = ((B[0] - A[0]) * u2[1] - (B[1] - A[1]) * u2[0]) / kr;
+    return [A[0] + u1[0] * t, A[1] + u1[1] * t];
+  };
+  const innen = [];
+  w.forEach((wd, i) => {
+    const [a, c] = [P[i], P[i + 1]], u = U(i), nn = N(i), dd = d(i), an = i === akt || i === akt2, lg = Math.hypot(c[0] - a[0], c[1] - a[1]);
+    const auf = (p, t, q = 0) => [p[0] + u[0] * t + nn[0] * q, p[1] + u[1] * t + nn[1] * q];
+    if (wd.wandart === 'Raumgrenze') s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: an ? ROT : '#5c554a', 'stroke-width': L, 'stroke-dasharray': '0.25 0.06 0.03 0.06' }));
+    else if (dd > 0) {
+      const q1 = Q(i), q2 = Q(i + 1);
+      s.append(el('polygon', { points: [a, c, q2, q1].join(' '), fill: MAUERWERK.includes(wd.wandart) ? 'url(#mw)' : '#fff', stroke: an ? ROT : '#17140f', 'stroke-width': an ? L * 2.5 : L }));
+      if (wd.wandart === 'Trockenbauwand') { // Beplankung innen/außen, dazwischen Dämmstoff (Zickzack)
+        const pl = Math.min(0.0125, dd * 0.15), zz = [], sch = dd * 0.6;
+        [pl, dd - pl].forEach(q => s.append(el('line', { x1: auf(a, 0, q)[0], y1: auf(a, 0, q)[1], x2: auf(c, 0, q)[0], y2: auf(c, 0, q)[1], stroke: '#17140f', 'stroke-width': L * 0.5 })));
+        for (let t = 0, k = 0; t <= lg; t += sch / 2, k++) zz.push(auf(a, t, k % 2 ? dd - pl * 1.5 : pl * 1.5));
+        s.append(el('polyline', { points: zz.join(' '), fill: 'none', stroke: '#5c554a', 'stroke-width': L * 0.4 }));
+      }
+    } else s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: an ? ROT : '#17140f', 'stroke-width': an ? L * 5 : L * 3 })); // Wandart offen
+    const dz = dd || 0.1;
+    for (const o of wd.oeffnungen || []) {
+      const p1 = auf(a, o.abstand), p2 = auf(a, o.abstand + o.breite);
+      s.append(el('polygon', { points: [p1, p2, auf(p2, 0, dz), auf(p1, 0, dz)].join(' '), fill: '#fffdf8', stroke: 'none' }));
+      [p1, p2].forEach(p => s.append(el('line', { x1: p[0], y1: p[1], x2: auf(p, 0, dz)[0], y2: auf(p, 0, dz)[1], stroke: '#17140f', 'stroke-width': L })));
+      if (o.art === 'fenster') [0.35, 0.5, 0.65].forEach(f => { const g1 = auf(p1, 0, dz * f), g2 = auf(p2, 0, dz * f);
+        s.append(el('line', { x1: g1[0], y1: g1[1], x2: g2[0], y2: g2[1], stroke: '#17140f', 'stroke-width': L * (f === 0.5 ? 0.4 : 0.7) })); });
+      else { // Tür: Blatt und Aufschlag in den Raum
+        const r = o.breite, ende = [p1[0] - nn[0] * r, p1[1] - nn[1] * r];
+        s.append(el('line', { x1: p1[0], y1: p1[1], x2: ende[0], y2: ende[1], stroke: '#17140f', 'stroke-width': L }));
+        s.append(el('path', { d: `M ${p2[0]} ${p2[1]} A ${r} ${r} 0 0 1 ${ende[0]} ${ende[1]}`, fill: 'none', stroke: '#5c554a', 'stroke-width': L * 0.5 }));
+      }
+    }
+    // Maßkette innen: Wandstücke und Öffnungen, Breite über, Höhe unter der Maßlinie
+    const ab = fs * 1.9, ins = [-nn[0], -nn[1]], kette = (abst, pkt, texte) => {
+      const at = t => [a[0] + u[0] * t + ins[0] * abst, a[1] + u[1] * t + ins[1] * abst];
+      const [s0, s1] = [at(pkt[0]), at(pkt.at(-1))];
+      s.append(el('line', { x1: s0[0], y1: s0[1], x2: s1[0], y2: s1[1], stroke: '#17140f', 'stroke-width': L * 0.6 }));
+      const sl = fs * 0.28, sx = (u[0] + ins[0]) * sl, sy = (u[1] + ins[1]) * sl;
+      pkt.forEach(t => { const m = at(t), h = auf(a, t);
+        s.append(el('line', { x1: h[0] + ins[0] * fs * 0.3, y1: h[1] + ins[1] * fs * 0.3, x2: m[0] + ins[0] * fs * 0.3, y2: m[1] + ins[1] * fs * 0.3, stroke: '#5c554a', 'stroke-width': L * 0.4 }));
+        s.append(el('line', { x1: m[0] - sx, y1: m[1] - sy, x2: m[0] + sx, y2: m[1] + sy, stroke: '#17140f', 'stroke-width': L * 1.2 })); });
+      let wi = Math.atan2(u[1], u[0]) * 180 / Math.PI;
+      if (wi > 90.01 || wi <= -90) wi += 180; // Schrift lesbar von unten oder rechts
+      const hoch = [Math.sin(wi * Math.PI / 180), -Math.cos(wi * Math.PI / 180)];
+      texte.forEach(([t0, t1, oben, unten]) => {
+        const m = at((t0 + t1) / 2), attr = (dy) => ({ 'font-size': fs * 0.62, 'text-anchor': 'middle', fill: '#17140f', 'data-mass': i, style: 'cursor:pointer',
+          transform: `rotate(${wi} ${m[0] + hoch[0] * dy} ${m[1] + hoch[1] * dy})` });
+        s.append(dinText(m[0] + hoch[0] * fs * 0.2, m[1] + hoch[1] * fs * 0.2, oben, attr(fs * 0.2)));
+        if (unten) s.append(dinText(m[0] - hoch[0] * fs * 0.75, m[1] - hoch[1] * fs * 0.75, unten[0], attr(-fs * 0.75), unten[1]));
+      });
+    };
+    const oe = [...(wd.oeffnungen || [])].sort((x, y) => x.abstand - y.abstand), pkt = [0], texte = [];
+    for (const o of oe) {
+      if (o.abstand > pkt.at(-1) + 0.001) texte.push([pkt.at(-1), o.abstand, o.abstand - pkt.at(-1)]);
+      texte.push([o.abstand, o.abstand + o.breite, o.breite, [o.hoehe, o.art === 'fenster' && o.bruestung ? `BRH ${din(o.bruestung).join('')} · ` : '']]);
+      pkt.push(o.abstand, o.abstand + o.breite);
+    }
+    if (lg > pkt.at(-1) + 0.001) texte.push([pkt.at(-1), lg, lg - pkt.at(-1)]);
+    pkt.push(lg);
+    kette(ab, [...new Set(pkt)], texte);
+    if (oe.length) kette(ab + fs * 1.3, [0, lg], [[0, lg, lg]]); // Gesamtmaß
+    innen.push(lg);
+  });
+  // Raumstempel: Name, Fläche, Umfang, lichte Höhe
+  const [x0, y0, x1, y1] = kasten(P.slice(0, -1)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, z = fs * 0.72;
+  const zeilen = [raum.name, `A = ${de(pr.flaeche)} m²`, `U = ${de(innen.reduce((t, v) => t + v, 0))} m`, ...(raum.hoehe ? [`LH = ${de(raum.hoehe)} m`] : [])];
+  s.append(el('rect', { x: cx - fs * 3.4, y: cy - z * 1.3, width: fs * 6.8, height: z * (zeilen.length * 1.25 + 0.6), fill: '#fffdf8', stroke: '#17140f', 'stroke-width': L * 0.6, 'pointer-events': 'none' }));
+  zeilen.forEach((t, k) => s.append(el('text', { x: cx, y: cy + k * z * 1.25, 'font-size': z, 'text-anchor': 'middle', 'font-weight': k ? 400 : 700, fill: '#17140f', 'pointer-events': 'none' }, t)));
+}
+
+/** Wand löschen: der Raum ist dann offen (Lücke), weiterzeichnen oder automatisch schließen. */
+function wandWeg(i) {
+  const { b, raum, e, r } = aktiv, [nm] = mitBez(b, raum);
+  if (!confirm(`Wand ${nm(i)} mit ihren Türen, Fenstern und Anschlüssen löschen?`)) return;
+  G.wandLoeschen(raum, i);
+  gewaehlt = null;
+  speichern(b);
+  raumSeite(b, e, r);
+}
 
 function zeichnenNeu() {
   const s = svg(), { raum, b } = aktiv;
   s.replaceChildren();
   const knoepfe = $('#zknoepfe');
-  if (zeichnen) {
-    s.setAttribute('viewBox', '0 0 10 10');
-    for (let i = 1; i < 10; i++) {
-      s.append(el('line', { x1: i, y1: 0, x2: i, y2: 10, stroke: '#e3ddd1', 'stroke-width': 0.02 }));
-      s.append(el('line', { x1: 0, y1: i, x2: 10, y2: i, stroke: '#e3ddd1', 'stroke-width': 0.02 }));
+  if (zeichnen) { // gezeichnet wird in Hauskoordinaten: die anderen Räume der Etage stehen grau daneben
+    const liste = haus(b, aktiv.e).filter(t => t.raum !== raum), pk = zeichnen.pkt;
+    if (!zeichnen.box) { // Zeichenfeld einmal festlegen (springt sonst beim Ziehen)
+      const alle0 = pk.length ? pk : liste.flatMap(t => anzeige(t.P)); // weiterzeichnen: um den Raum herum, sonst ganzes Haus
+      let [x0, y0, x1, y1] = alle0.length ? kasten(alle0) : [0, 0, 0, 0];
+      if (!pk.length && liste.length) x1 += 8; // Platz rechts daneben für den neuen Raum
+      const gr = Math.max(pk.length ? 6 : 10, x1 - x0 + 3, y1 - y0 + 3), mx = Math.round((x0 + x1) / 2), my = Math.round((y0 + y1) / 2);
+      zeichnen.box = alle0.length ? [mx - gr / 2, my - gr / 2, gr, gr] : [0, 0, 10, 10];
     }
-    const pk = zeichnen.pkt, alle_ = zeichnen.zug ? [...pk, zeichnen.zug] : pk;
+    const [bx, by, bw] = zeichnen.box;
+    s.setAttribute('viewBox', zeichnen.box.join(' '));
+    for (let i = Math.ceil(bx); i < bx + bw; i++) s.append(el('line', { x1: i, y1: by, x2: i, y2: by + bw, stroke: '#e3ddd1', 'stroke-width': bw * 0.002 }));
+    for (let i = Math.ceil(by); i < by + bw; i++) s.append(el('line', { x1: bx, y1: i, x2: bx + bw, y2: i, stroke: '#e3ddd1', 'stroke-width': bw * 0.002 }));
+    andereRaeume(s, liste, raum, bw / 30, false);
+    const alle_ = zeichnen.zug ? [...pk, zeichnen.zug] : pk, fest = zeichnen.fest || 0;
+    alle_.slice(1, Math.max(1, fest)).forEach((q, k) => s.append(el('line', { x1: alle_[k][0], y1: alle_[k][1], x2: q[0], y2: q[1], stroke: '#17140f', 'stroke-width': 0.1, 'stroke-linecap': 'round' })));
     alle_.slice(1).forEach((q, k) => { // jede Wand in der Farbe ihrer Wandart (offen = braun)
-      const art = zeichnen.arten[k] ?? zeichnen.art, a = alle_[k];
+      if (k < fest - 1) return; // bestehende Wände oben schon gezeichnet
+      const art = zeichnen.arten[k - Math.max(0, fest - 1)] ?? zeichnen.art, a = alle_[k];
       if (art && G.WANDARTEN[art]) s.append(el('line', { x1: a[0], y1: a[1], x2: q[0], y2: q[1], stroke: WANDFARBE(art), 'stroke-width': 0.3, 'stroke-linecap': 'round' }));
       s.append(el('line', { x1: a[0], y1: a[1], x2: q[0], y2: q[1], stroke: art === 'Raumgrenze' ? '#9a9284' : '#7e5c2e', 'stroke-width': 0.08,
         'stroke-dasharray': art === 'Raumgrenze' ? '0.2 0.15' : 'none', 'stroke-linecap': 'round' }));
@@ -495,16 +783,17 @@ function zeichnenNeu() {
     if (zeichnen.zug) {
       const a = pk.at(-1), q = zeichnen.zug;
       s.append(el('text', { x: q[0], y: q[1] - 0.35, 'font-size': 0.45, 'text-anchor': 'middle', fill: '#7e5c2e' },
-        `${G.name(pk.length - 1)} ≈ ${de(Math.hypot(q[0] - a[0], q[1] - a[1]), 1)}`));
+        `≈ ${de(Math.hypot(q[0] - a[0], q[1] - a[1]), 1)} m`));
     }
-    $('#status').textContent = !pk.length ? 'Mit dem Finger Wand für Wand ziehen, im Uhrzeigersinn oder andersherum.'
+    $('#status').textContent = fest ? 'Vom roten Ende der letzten Wand aus weiterzeichnen, bis zum grünen Anfang.' : !pk.length ? 'Mit dem Finger Wand für Wand ziehen, im Uhrzeigersinn oder andersherum.'
       : pk.length < 3 ? 'Nächste Wand vom Ende der letzten aus ziehen. Ecken rasten bei 90° und 45° ein.'
       : 'Am grünen Startpunkt loslassen oder „Schließen“ tippen: dann ist der Raum fertig skizziert.';
     knoepfe.innerHTML = `<label class="feld breit">Wandart der nächsten Wand${auswahl('id="z-art"', WANDART_OPT, zeichnen.art)}</label>
       <button id="z-rueck" ${pk.length ? '' : 'disabled'}>Rückgängig</button>
       <button class="haupt" id="z-zu" ${pk.length >= 3 ? '' : 'disabled'}>Schließen</button>`;
     $('#z-art').onchange = ev => { zeichnen.art = ev.target.value; };
-    $('#z-rueck').onclick = () => { pk.pop(); zeichnen.arten.splice(Math.max(0, pk.length - 1)); zeichnenNeu(); };
+    if (fest) { $('#z-rueck').disabled = pk.length <= fest; s.append(el('circle', { cx: pk[fest - 1][0], cy: pk[fest - 1][1], r: 0.2, fill: ROT })); }
+    $('#z-rueck').onclick = () => { if (pk.length <= fest) return; pk.pop(); zeichnen.arten.splice(Math.max(0, pk.length - Math.max(1, fest))); zeichnenNeu(); };
     $('#z-zu').onclick = schliessen;
     return;
   }
@@ -531,23 +820,32 @@ function zeichnenNeu() {
     app.querySelector(`input[data-feld="l"][data-i="${i}"]`)?.classList.toggle('gerundet', ger);
   });
   const [nm, wn] = mitBez(b, raum), P = punkteAnzeige(), pr = G.pruefen(w, nm), warn = G.warnungen(raum, wn);
-  const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const [x0, y0, x1, y1] = kasten(P), liste = haus(b, aktiv.e);
   const gr = Math.max(x1 - x0, y1 - y0, 1), rand = gr * 0.25, fs = gr / 18;
-  s.setAttribute('viewBox', `${x0 - rand} ${y0 - rand} ${x1 - x0 + 2 * rand} ${y1 - y0 + 2 * rand}`);
-  s.append(el('polygon', { points: P.slice(0, -1).join(' '), fill: '#f4ead9' }));
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, MESSING = '#a77f45';
+  const akt = hervor?.startsWith('w-') ? +hervor.slice(2) : gewaehlt?.i ?? null; // Wand in Bearbeitung
+  let [vx, vy] = [0, 0];
+  if (akt != null && P[akt + 1]) { // Ausschnitt rutscht ein Stück zur Wand hin, der Raum bleibt ganz sichtbar
+    vx = ((P[akt][0] + P[akt + 1][0]) / 2 - mx) * 0.35; vy = ((P[akt][1] + P[akt + 1][1]) / 2 - my) * 0.35;
+  }
+  const hk = kasten(liste.flatMap(t => anzeige(t.P))), hr = Math.max(hk[2] - hk[0], hk[3] - hk[1], 1) * 0.08;
+  sicht(s, [x0 - rand + vx, y0 - rand + vy, x1 - x0 + 2 * rand, y1 - y0 + 2 * rand],
+    { bau: bauAnsicht, ...(liste.length > 1 ? { haus: [hk[0] - hr, hk[1] - hr, hk[2] - hk[0] + 2 * hr, hk[3] - hk[1] + 2 * hr] } : {}) });
+  andereRaeume(s, liste, raum, fs, akt != null);
+  s.append(el('polygon', { points: P.slice(0, -1).join(' '), fill: bauAnsicht ? '#fffdf8' : '#f4ead9' }));
+  if (bauAnsicht) bauZeichnen(s, raum, P, fs, akt, gewaehlt?.j, pr);
   w.forEach((wd, i) => {
     const [a, c] = [P[i], P[i + 1]], l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
     const u = [(c[0] - a[0]) / l, (c[1] - a[1]) / l], aussen = [u[1], -u[0]]; // links der Laufrichtung (Bildschirm) = außen
-    const an = hervor === `w-${i}` || gewaehlt?.i === i;
+    const an = i === akt || gewaehlt?.j === i;
+    if (bauAnsicht) return s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: 'transparent', 'stroke-width': fs * 2.2, 'data-i': i, style: 'cursor:pointer' }));
     if (wd.dicke > 0) { // Wandart: Wanddicke nach außen, Farbe wie im Grundriss-Editor
       const h = wd.dicke / 2;
       s.append(el('line', { x1: a[0] + aussen[0] * h, y1: a[1] + aussen[1] * h, x2: c[0] + aussen[0] * h, y2: c[1] + aussen[1] * h,
         stroke: WANDFARBE(wd.wandart), 'stroke-width': wd.dicke, 'pointer-events': 'none' }));
     }
     const grenze = wd.wandart === 'Raumgrenze';
-    s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: an ? MESSING : wd.mitrechnen === false ? '#9a9284' : '#17140f',
+    s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: an ? ROT : wd.mitrechnen === false ? '#9a9284' : '#17140f',
       'stroke-width': fs * (an ? 0.5 : grenze ? 0.15 : 0.25), 'stroke-dasharray': wd.mitrechnen === false ? `${fs * 0.5} ${fs * 0.4}` : 'none', 'stroke-linecap': 'round' }));
     s.append(el('line', { x1: a[0], y1: a[1], x2: c[0], y2: c[1], stroke: 'transparent', 'stroke-width': fs * 2.2, 'data-i': i, style: 'cursor:pointer' }));
     (wd.oeffnungen || []).forEach((o, j) => {
@@ -570,7 +868,7 @@ function zeichnenNeu() {
       s.append(el('text', { x: ecke[0] + (mx - ecke[0]) / d * fs * 1.6, y: ecke[1] + (my - ecke[1]) / d * fs * 1.6 + fs * 0.3, 'font-size': fs * 0.8, 'text-anchor': 'middle', fill: zu.frei.includes(i) ? '#3f7d5a' : '#5c554a' }, `${de(wd.winkel, 1)}°`));
     }
   });
-  const dr = (raum.drehung ?? 0) * Math.PI / 180, dreh = ([x, y]) => [x * Math.cos(dr) - y * Math.sin(dr), -(x * Math.sin(dr) + y * Math.cos(dr))];
+  const dr = (raum.drehung ?? 0) * Math.PI / 180, { ox, oy } = versatz(), dreh = ([x, y]) => [x * Math.cos(dr) - y * Math.sin(dr) + ox, -(x * Math.sin(dr) + y * Math.cos(dr) + oy)];
   raum.koerper.forEach((k, j) => {
     const [cx, cy] = G.koerperMitte(k), schlecht = warn.some(x => x.ziel === `k-${j}`);
     const form = k.form === 'kreis'
@@ -605,12 +903,29 @@ function zeichnenNeu() {
   if (warn.length) teile.push(`<ul class="warnliste">${warn.map(x => `<li data-warn="${x.wand ?? ''}:${x.ziel}">⚠ ${esc(x.text)} Antippen zum Anpassen.</li>`).join('')}</ul>`);
   $('#status').innerHTML = teile.map(t => t.startsWith('<div') || t.startsWith('<ul') ? t : `<div>${t}</div>`).join('');
   const offen = zu.zustand === 'frage' || (zu.zustand === 'offen' && (pr.luecke > 0.0005 || (pr.fehlt.length >= 1 && pr.fehlt.length <= 2)));
+  if (gewaehlt?.j != null && w[gewaehlt.i] && w[gewaehlt.j]) { // zwei Nachbarwände: Ecke dazwischen nach innen
+    const { e, r } = aktiv, n = w.length, i = (gewaehlt.i + 1) % n === gewaehlt.j ? gewaehlt.i : gewaehlt.j, j = (i + 1) % n;
+    const ecke = P[i + 1];
+    s.append(el('circle', { cx: ecke[0], cy: ecke[1], r: fs * 0.5, fill: '#fff', stroke: ROT, 'stroke-width': fs * 0.2, 'pointer-events': 'none' }));
+    knoepfe.innerHTML = `<div class="wahl"><b>${nm(i)}</b> und <b>${nm(j)}</b> gewählt · Ecke dazwischen:</div>
+      <button class="haupt zwei" id="z-aecke">+ Außenecke (nach innen)</button><button id="z-ab">Abbrechen</button>`;
+    $('#z-aecke').onclick = () => {
+      const m = v => Math.min(0.5, (G.wandLaenge(v) ?? v.skizze ?? 1) * 0.3);
+      G.eckeAusschneiden(raum, i, m(w[i]), m(w[j]));
+      speichern(b);
+      raumSeite(b, e, r);
+    };
+    $('#z-ab').onclick = () => { gewaehlt = null; zeichnenNeu(); };
+    return;
+  }
   if (gewaehlt && w[gewaehlt.i]) {
     const i = gewaehlt.i, { e, r } = aktiv;
-    knoepfe.innerHTML = `<div class="wahl"><b>${nm(i)}</b> gewählt · Stelle auf der Wand antippen, dann:</div>
-      <button data-tw="ecke">+ Ecke</button><button data-tw="vor">+ Vorsprung</button><button data-tw="nische">+ Nische</button>
+    knoepfe.innerHTML = `<div class="wahl"><b>${nm(i)}</b> gewählt · Nachbarwand antippen = Ecke dazwischen</div>
+      <button data-tw="ecke">+ Knick</button><button data-tw="vor">+ Vorsprung</button><button data-tw="nische">+ Nische</button>
       <label class="feld zwei">Wandart${auswahl('id="z-wart"', WANDART_OPT, w[i].wandart || '')}</label>
-      <button class="haupt" id="z-auf">Öffnen ›</button>`;
+      <button class="haupt" id="z-auf">Öffnen ›</button>
+      <button class="weg breit" id="z-weg">Wand ${nm(i)} löschen</button>`;
+    $('#z-weg').onclick = () => wandWeg(i);
     knoepfe.querySelectorAll('[data-tw]').forEach(k => { k.onclick = () => {
       const t = k.dataset.tw;
       if (t === 'ecke') G.eckeEinfuegen(raum, i, gewaehlt.anteil); else G.vorsprungEinfuegen(raum, i, gewaehlt.anteil, t === 'vor' ? 0.3 : -0.3);
@@ -621,7 +936,16 @@ function zeichnenNeu() {
     $('#z-auf').onclick = () => geh('w', b.id, e, r, i, gewaehlt.anteil.toFixed(2));
     return;
   }
-  knoepfe.innerHTML = (offen ? '<button class="haupt zwei" id="z-auto">Automatisch schließen</button>' : '') + `<button id="z-neu" class="${offen ? '' : 'breit'}">Neu zeichnen</button>`;
+  const luecke = pr.luecke > 0.0005;
+  knoepfe.innerHTML = (offen ? '<button class="haupt" id="z-auto">Automatisch schließen</button>' : '')
+    + (luecke ? '<button id="z-weiter">Weiterzeichnen</button>' : '') + `<button id="z-neu" class="${offen || luecke ? '' : 'breit'}">Neu zeichnen</button>`;
+  if (luecke) $('#z-weiter').onclick = () => { // ab dem Ende der letzten Wand neue Wände zeichnen
+    const pk = punkteAnzeige();
+    zeichnen = { pkt: pk, zug: null, arten: [], art: '', fest: pk.length };
+    gewaehlt = null;
+    zeichnenNeu();
+    svg().scrollIntoView({ block: 'start' });
+  };
   if (offen) $('#z-auto').onclick = () => {
     const erg = G.autoSchliessen(raum);
     autoMeldung = !erg ? 'Nichts zu schließen: es fehlen zu viele Maße. Erst weiter messen.'
@@ -661,6 +985,7 @@ const r3 = v => Math.round(v * 1000) / 1000;
 function wandSeite(b, e, r, i, anteil, sel) {
   const raum = b.etagen[e].raeume[r], w = raum.waende[i], n = raum.waende.length;
   aktiv = { b, raum, e, r, w, i, anteil };
+  zoomKey(`w/${b.id}/${e}/${r}/${i}`);
   const key = `${b.id}/${e}/${r}/${i}`;
   if (offenA.key !== key) offenA = { key, ids: new Set() };
   if (sel?.startsWith('a-')) offenA.ids.add(+sel.slice(2));
@@ -820,12 +1145,14 @@ function karteNeu(raum, i) {
   const s = $('#karte');
   if (!s) return;
   s.replaceChildren();
-  const P = punkteAnzeige(raum), xs = P.map(p => p[0]), ys = P.map(p => p[1]);
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)], gr = Math.max(x1 - x0, y1 - y0, 1), r = gr * 0.08;
-  s.setAttribute('viewBox', `${x0 - r} ${y0 - r} ${x1 - x0 + 2 * r} ${y1 - y0 + 2 * r}`);
-  s.append(el('polygon', { points: P.slice(0, -1).join(' '), fill: '#f4ead9', stroke: '#9a9284', 'stroke-width': gr * 0.02 }));
-  s.append(el('line', { x1: P[i][0], y1: P[i][1], x2: P[i + 1][0], y2: P[i + 1][1], stroke: '#b4532a', 'stroke-width': gr * 0.06, 'stroke-linecap': 'round' }));
-  s.append(el('circle', { cx: P[i][0], cy: P[i][1], r: gr * 0.045, fill: '#b4532a' })); // Wandanfang = links in der Ansicht
+  const P = punkteAnzeige(raum), [x0, y0, x1, y1] = kasten(P), gr = Math.max(x1 - x0, y1 - y0, 1), r = gr * 0.15;
+  // Raum mit etwas Haus drumherum, Ausschnitt zur bearbeiteten Wand hin verschoben
+  const vx = ((P[i][0] + P[i + 1][0]) / 2 - (x0 + x1) / 2) * 0.3, vy = ((P[i][1] + P[i + 1][1]) / 2 - (y0 + y1) / 2) * 0.3;
+  s.setAttribute('viewBox', `${x0 - r + vx} ${y0 - r + vy} ${x1 - x0 + 2 * r} ${y1 - y0 + 2 * r}`);
+  andereRaeume(s, haus(aktiv.b, aktiv.e), raum, gr / 14, true);
+  s.append(el('polygon', { points: P.slice(0, -1).join(' '), fill: '#f4ead9', stroke: '#5c554a', 'stroke-width': gr * 0.02 }));
+  s.append(el('line', { x1: P[i][0], y1: P[i][1], x2: P[i + 1][0], y2: P[i + 1][1], stroke: ROT, 'stroke-width': gr * 0.06, 'stroke-linecap': 'round' }));
+  s.append(el('circle', { cx: P[i][0], cy: P[i][1], r: gr * 0.045, fill: ROT })); // Wandanfang = links in der Ansicht
 }
 
 /** Ansicht der Wand von innen: links = Wandanfang, unten = Fußboden. Mit Maßkette unten und Höhen. */
@@ -838,7 +1165,8 @@ function ansichtNeu(w, raum) {
   const xs = [0, L, ...w.oeffnungen.flatMap(o => [o.abstand, o.abstand + o.breite]), ...w.anschluesse.map(a => a.abstand)];
   const ys = [0, ...w.oeffnungen.map(o => H - o.bruestung - o.hoehe), ...w.anschluesse.map(a => H - a.hoehe)];
   const [xa, xb, ya] = [Math.min(...xs), Math.max(...xs), Math.min(...ys)];
-  s.setAttribute('viewBox', `${xa - fs * 3} ${ya - fs * 1.5} ${xb - xa + fs * 4.5} ${H - ya + fs * 6}`);
+  sicht(s, [xa - fs * 3, ya - fs * 1.5, xb - xa + fs * 4.5, H - ya + fs * 6]);
+  if (!s._gesten) { s._gesten = true; gesten(s); }
   const text = (x, y, t, mehr = {}) => s.append(el('text', { x, y, 'font-size': fs * 0.75, 'text-anchor': 'middle', fill: '#17140f', ...mehr }, t));
   s.append(el('rect', { x: 0, y: 0, width: L, height: H, fill: w.mitrechnen === false ? '#f2eee6' : '#fbfaf7', stroke: '#17140f', 'stroke-width': fs * 0.12,
     'stroke-dasharray': w.mitrechnen === false ? `${fs * 0.5} ${fs * 0.4}` : 'none' }));
@@ -885,6 +1213,7 @@ function ansichtNeu(w, raum) {
   if (hervor === 'raumhoehe') s.append(el('line', { x1: 0, y1: 0, x2: 0, y2: H, stroke: '#a77f45', 'stroke-width': fs * 0.35 }));
   text(-fs * 1.4, H / 2, `${massText(H)}${raum.hoehe == null ? '?' : ''}`, { transform: `rotate(-90 ${-fs * 1.4} ${H / 2})`, fill: '#5c554a', 'data-sel': 'raumhoehe', style: 'cursor:pointer' });
   s.onclick = ev => {
+    if (!angetippt(s) || zoomKnopf(s, ev, () => ansichtNeu(w, raum))) return;
     const sel = ev.target.dataset?.sel;
     if (!sel) return;
     if (sel === 'laenge' || sel === 'raumhoehe') { const f = app.querySelector(`[data-ziel="${sel}"]`); f.focus({ preventScroll: true }); return f.scrollIntoView({ block: 'start' }); }
