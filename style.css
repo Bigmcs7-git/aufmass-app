@@ -3,7 +3,7 @@
   --grund: #f2eee6; --flaeche: #fbfaf7; --zart: #f7f4ee; --rand: #e3ddd1; --rand-k: #cfc7b7;
   --text: #17140f; --titel: #2b2418; --grau: #5c554a; --hell: #9a9284;
   --messing: #a77f45; --messing-d: #7e5c2e; --wahl: #f4ead9; --wahl-k: #ead9bb;
-  --kopf: #17140f; --terra: #b4532a; --gruen: #3f7d5a; --r: 6px;
+  --kopf: #17140f; --terra: #b4532a; --gruen: #3f7d5a; --r: 6px; --kopf-h: 56px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--grund); color: var(--text); font: 16px/1.35 system-ui, sans-serif; }
@@ -91,3 +91,11 @@ svg#karte { display: block; width: 100%; height: 90px; margin: 4px 0; }
 .wandnav { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 6px; align-items: center; margin: 8px 0; }
 .wandname { display: flex; flex-direction: column; align-items: center; color: var(--titel); }
 .wandname small { color: var(--grau); font-size: 13px; }
+
+/* Zeichnung bleibt unter der Kopfzeile stehen, darunter scrollen die Maße.
+   Felder werden beim Springen unter die Zeichnung geschoben (scroll-margin); bei offener Tastatur wird die Zeichnung kleiner. */
+svg#skizze, svg#ansicht { position: sticky; top: var(--kopf-h); z-index: 1; box-shadow: 0 6px 8px -6px rgba(23, 20, 15, .25); }
+main:has(svg#skizze) * { scroll-margin-top: calc(var(--kopf-h) + max(46vh, 260px) + 12px); }
+main:has(svg#ansicht) * { scroll-margin-top: calc(var(--kopf-h) + max(38vh, 220px) + 12px); }
+main:has(input:focus) svg#skizze, main:has(input:focus) svg#ansicht { height: 28vh; min-height: 160px; }
+main:has(svg#skizze):has(input:focus) *, main:has(svg#ansicht):has(input:focus) * { scroll-margin-top: calc(var(--kopf-h) + max(28vh, 160px) + 12px); }

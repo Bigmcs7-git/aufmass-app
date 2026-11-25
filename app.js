@@ -215,7 +215,7 @@ function zahlFelder(wurzel, schreiben, nachher) {
       if (ok) { if (v != null) f.value = roh ? rohText(v) : massText(v); speichern(aktiv.b); nachher(); }
       return ok;
     };
-    f._weiter = () => { const l = felder(), n = l.slice(l.indexOf(f) + 1).find(x => !x.hasAttribute('data-still')); n ? n.focus() : f.blur(); };
+    f._weiter = () => { const l = felder(), n = l.slice(l.indexOf(f) + 1).find(x => !x.hasAttribute('data-still')); n ? zeig(n) : f.blur(); };
     f.onfocus = () => { letztesFeld = f; f.select(); };
     f.onchange = () => f._uebernehmen();
     f.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); if (f._uebernehmen()) f._weiter(); } };
@@ -278,14 +278,14 @@ function raumSeite(b, e, r) {
       <span>°</span><small class="ger" id="ger-${i}"></small></div>`).join('')}</div>
     ${raum.waende.length ? `<p class="hinweis">Maß in der Zeichnung oder Feld antippen, messen, Enter: das nächste Feld ist dran.
       Winkel = Ecke am Ende der Wand (90 normal, 270 vorspringend); schräge Ecken rechnet die App aus, sobald alle Wände gemessen sind (grün).
-      Wand in der Zeichnung oder Buchstabe antippen: Wandansicht mit Türen, Fenstern, Anschlüssen.</p>
+      Wand in der Zeichnung oder Wandnamen antippen: Wandansicht mit Türen, Fenstern, Anschlüssen.</p>
       <div class="reihe"><button class="haupt" id="r-waende">Wände der Reihe nach bemaßen</button></div>
       <h3>Säulen und Körper</h3>
-      <p class="hinweis">Lage: „ab Ecke“ = entlang Wand A ab ihrem Anfang bis zur Säule, „von A“ = quer von Wand A bis zur Säule.</p>
+      <p class="hinweis">Lage: „ab Ecke“ = entlang ${WB[0] ?? "der ersten Wand"} ab ihrem Anfang bis zur Säule, „von ${WB[0] ?? "Wand"}“ = quer von ${WB[0] ?? "der ersten Wand"} bis zur Säule.</p>
       ${raum.koerper.map((k, j) => `<div class="oe" id="k-${j}">
         <select data-form="${j}"><option value="rechteck" ${k.form === 'rechteck' ? 'selected' : ''}>Säule eckig</option><option value="kreis" ${k.form === 'kreis' ? 'selected' : ''}>Säule rund</option></select>
         <button class="klein ent" data-kweg="${j}" aria-label="löschen">✕</button>
-        ${zfeld(`${j}.s`, k.s, 'ab Ecke')}${zfeld(`${j}.a`, k.a, 'von A')}
+        ${zfeld(`${j}.s`, k.s, 'ab Ecke')}${zfeld(`${j}.a`, k.a, `von ${WB[0]}`)}
         ${k.form === 'kreis' ? zfeld(`${j}.d`, k.d, 'Ø') : zfeld(`${j}.b`, k.b, 'Breite') + zfeld(`${j}.t`, k.t, 'Tiefe')}
         ${zfeld(`${j}.h`, k.h, 'Höhe', 'placeholder="Decke"')}
         <label class="breit"><small>Name</small><input data-kname="${j}" value="${esc(k.name || '')}" placeholder="z. B. Schacht"></label>
@@ -332,7 +332,7 @@ function raumSeite(b, e, r) {
     const [wand, ziel] = k.dataset.warn.split(':');
     if (wand !== '') return geh('w', b.id, e, r, wand, '', ziel);
     const f = app.querySelector(`#${ziel} input`);
-    if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); }
+    if (f) { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'start' }); }
   };
   skizzeEinrichten();
   zeichnenNeu();
@@ -355,11 +355,14 @@ function uebernehmen(f) {
 }
 
 /** Nach Enter: Höhe → Wand A → B → … (Winkel nur, wenn man sie antippt). */
+// Feld fokussieren und direkt unter die stehende Zeichnung holen (sonst verdeckt es die Handytastatur)
+const zeig = f => { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'start' }); };
+
 function weiter(f) {
   const n = aktiv.raum.waende.length;
   const i = f.dataset.feld === 'hoehe' ? 0 : +f.dataset.i + 1;
   const naechstes = i < n && app.querySelector(`input[data-feld="l"][data-i="${i}"]`);
-  naechstes ? naechstes.focus() : f.blur();
+  naechstes ? zeig(naechstes) : f.blur();
 }
 
 // ---------- Skizze ----------
@@ -415,8 +418,8 @@ function skizzeEinrichten() {
     const d = ev.target.dataset || {}, { b, e, r } = aktiv;
     if (d.mass != null) { // Maß in der Zeichnung antippen: Feld ist bereit für den Laser
       const f = app.querySelector(`input[data-feld="l"][data-i="${d.mass}"]`);
-      f.scrollIntoView({ block: 'center' });
-      return f.focus();
+      f.focus({ preventScroll: true });
+      return f.scrollIntoView({ block: 'start' });
     }
     if (d.teil) { const [i, sel] = d.teil.split(':'); return geh('w', b.id, e, r, i, '', sel); }
     if (d.i == null) return;
@@ -691,7 +694,7 @@ function fokus(id) {
   zeile.classList.add('gewaehlt');
   setTimeout(() => zeile.classList.remove('gewaehlt'), 1500);
   const f = zeile.querySelector('input[data-ziel]');
-  zeile.scrollIntoView({ block: 'center' });
+  zeile.scrollIntoView({ block: 'start' });
   f?.focus();
 }
 
@@ -754,7 +757,7 @@ function ansichtNeu(w, raum) {
   s.onclick = ev => {
     const sel = ev.target.dataset?.sel;
     if (!sel) return;
-    if (sel === 'laenge' || sel === 'raumhoehe') { const f = app.querySelector(`[data-ziel="${sel}"]`); f.scrollIntoView({ block: 'center' }); return f.focus(); }
+    if (sel === 'laenge' || sel === 'raumhoehe') { const f = app.querySelector(`[data-ziel="${sel}"]`); f.focus({ preventScroll: true }); return f.scrollIntoView({ block: 'start' }); }
     fokus(sel);
   };
 }
